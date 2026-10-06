@@ -1,0 +1,163 @@
+name: Build OpenMandriva package
+
+on:
+  workflow_dispatch:
+    inputs:
+      packages:
+        description: 'Package name(s) to build, space- or comma-separated (each must match specs/<name>/<name>.spec)'
+        required: true
+
+# Every run — regardless of how many packages it builds — reads,
+# merges into, and republishes the single shared repo-rpm release.
+# Without a shared concurrency group, two separate dispatches (e.g.
+# building libtracefs, then powertop, without waiting for the first
+# to finish) can run in parallel containers and race on that
+# read-modify-write, so a later build can silently miss a package
+# an earlier, still-in-flight build hasn't published yet.
+# cancel-in-progress is false so runs queue rather than one killing
+# the other mid-publish.
+concurrency:
+  group: oma-personal-repo-build
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - name: Build package matrix from input
+        id: set
+        run: |
+          matrix=$(printf '%s' "${{ inputs.packages }}" |
+            tr ',' ' ' |
+            xargs -n1 |
+            jq -R . |
+            jq -sc '{package: .}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+      # Builds share and publish to the same repo-rpm release below;
+      # running them one at a time avoids two jobs racing to
+      # upload/delete assets on that shared release.
+      max-parallel: 1
+      fail-fast: false
+
+    container:
+        image: openmandriva/minimal:rolling
+        options: --platform linux/amd64 --privileged
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute cache week
+        id: cachekey
+        run: echo "week=$(date +%Y-W%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache dnf package downloads
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/dnf
+          key: dnf-pkgcache-${{ steps.cachekey.outputs.week }}
+          restore-keys: |
+            dnf-pkgcache-
+
+      - name: Build package
+        run: sh build.sh
+        env:
+          PKG: ${{ matrix.package }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Delete previous release for this package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete "${{ matrix.package }}" \
+            --yes \
+            --cleanup-tag \
+            --repo "${{ github.repository }}" || true
+
+      - name: Publish per-package release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tag_name: ${{ matrix.package }}
+          files: out/*.rpm
+
+      - name: Remove stale versions from the rolling repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in merged/*.rpm; do
+            base=$(basename "$f")
+            pkg=$(echo "$base" | sed -E 's/-[^-]+-[^-]+\.[a-zA-Z0-9_]+\.rpm$//')
+
+            gh release view repo-rpm \
+              --json assets \
+              --jq '.assets[].name' \
+              2>/dev/null \
+              | grep "^${pkg}-" \
+              | xargs -r -I{} gh release delete-asset \
+                  repo-rpm "{}" --yes || true
+          done
+
+      - name: Publish rolling repo release (RPMs only)
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tag_name: repo-rpm
+          name: "Personal repo snapshot (RPM)"
+          files: merged/*.rpm
+
+      # Release assets are flat, so dnf cannot read repodata/ from the
+      # release. Serve it from GitHub Pages (gh-pages branch) instead;
+      # the metadata's xml:base points back at the release for the RPMs.
+      - name: Publish repodata to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          pages=$(mktemp -d)
+          cp -r merged/repodata "$pages/repodata"
+          touch "$pages/.nojekyll"
+          cd "$pages"
+          git init -q -b gh-pages
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Update repodata (${{ matrix.package }})"
+          git remote add origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          git push -f origin gh-pages
+
+      # Legacy cleanup: earlier runs uploaded repomd.xml and the
+      # hash-named primary/filelists/other files as release assets.
+      - name: Remove old metadata assets from release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view repo-rpm \
+            --repo "${{ github.repository }}" \
+            --json assets --jq '.assets[].name' 2>/dev/null \
+            | grep -E '(^repomd\.xml|-(primary|filelists|other)\.(xml|sqlite)(\.(gz|zst|bz2|xz))?)$' \
+            | xargs -r -I{} gh release delete-asset repo-rpm "{}" \
+                --yes --repo "${{ github.repository }}" || true
+
+      - name: Upload built package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.package }}
+          path: out/
+          if-no-files-found: error

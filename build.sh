@@ -1,0 +1,659 @@
+#!/bin/sh
+set -eu
+
+# ============================================================
+# Configuration
+# ============================================================
+
+if [ -z "${PKG:-}" ]; then
+    echo "PKG is not set — pass the package name to build" >&2
+    exit 1
+fi
+
+if [ -z "${REPO:-}" ]; then
+    echo "REPO is not set" >&2
+    exit 1
+fi
+
+SPEC="specs/$PKG/$PKG.spec"
+
+if [ ! -f "$SPEC" ]; then
+    echo "No spec found at $SPEC" >&2
+    exit 1
+fi
+
+ROOT="$PWD"
+ABF="/home/builder/abf/$PKG"
+LOCALREPO="/home/builder/localrepo"
+TARGET_ARCH="${TARGET_ARCH:-znver1}"
+
+echo "============================================================"
+echo " OpenMandriva package build"
+echo "============================================================"
+echo
+echo "Package : $PKG"
+echo "Spec    : $SPEC"
+echo "Repo    : $REPO"
+echo "Arch    : $TARGET_ARCH"
+echo
+
+# ============================================================
+# Synchronize OpenMandriva Rolling / ROME
+# ============================================================
+
+echo "==> OpenMandriva system"
+cat /etc/os-release
+
+echo
+echo "==> Initial repositories"
+dnf repolist
+
+echo
+echo "==> Synchronizing Rolling system"
+
+dnf clean all
+dnf makecache
+dnf distro-sync -y
+
+echo
+echo "==> Repositories after synchronization"
+dnf repolist
+
+# ============================================================
+# Install build infrastructure
+# ============================================================
+
+echo
+echo "==> Installing packaging tools"
+
+dnf install -y \
+    packaging-tools \
+    rpmlint \
+    git \
+    sudo \
+    curl \
+    createrepo_c \
+    github-cli \
+    hostname \
+    gnutar
+
+# ============================================================
+# Create builder user
+# ============================================================
+
+echo
+echo "==> Preparing builder user"
+
+if ! id builder >/dev/null 2>&1; then
+    useradd -m builder
+fi
+
+echo "builder ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/builder
+chmod 440 /etc/sudoers.d/builder
+
+# ============================================================
+# Verify RPM / architecture environment
+# ============================================================
+
+echo
+echo "============================================================"
+echo " RPM environment"
+echo "============================================================"
+
+echo
+echo "==> RPM target CPU"
+rpm --eval '%{_target_cpu}'
+
+echo
+echo "==> RPM target platform"
+rpm --eval '%{_target_platform}'
+
+echo
+echo "==> RPM distribution"
+rpm --eval '%{distribution}'
+
+echo
+echo "==> RPM database"
+rpm --eval '%{_dbpath}'
+
+if [ ! -d /var/lib/rpm ]; then
+    echo "ERROR: /var/lib/rpm does not exist" >&2
+    exit 1
+fi
+
+echo
+echo "==> RPM packages"
+rpm -q rpm || true
+rpm -q rpm-libs || true
+rpm -q python3-rpm || true
+rpm -q rpmlint || true
+
+echo
+echo "==> Python RPM module"
+
+python3 -c '
+import rpm
+print("python-rpm version:", rpm.__version__)
+print("python-rpm module:", rpm.__file__)
+'
+
+echo
+echo "==> rpmlint"
+rpmlint --version
+
+echo
+echo "==> DNF"
+dnf --version
+
+# ============================================================
+# Verify required commands
+# ============================================================
+
+echo
+echo "==> Required commands"
+
+command -v hostname
+command -v abb
+command -v rpmbuild
+command -v dnf
+command -v rpmlint
+command -v createrepo_c
+command -v gh
+
+# ============================================================
+# Prepare ABF directory
+# ============================================================
+
+echo
+echo "==> Preparing ABF build directory"
+
+rm -rf "$ABF"
+su builder -c "mkdir -p '$ABF'"
+
+cp "specs/$PKG"/* "$ABF/"
+
+chown -R builder:builder "/home/builder/abf"
+
+# ============================================================
+# Download previous personal repository
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Personal RPM repository"
+echo "============================================================"
+
+rm -rf "$LOCALREPO"
+mkdir -p "$LOCALREPO"
+
+if gh release download repo-rpm \
+    --repo "$REPO" \
+    --dir "$LOCALREPO" \
+    --pattern '*.rpm' \
+    --clobber 2>/dev/null
+then
+    echo "==> Previous repo-rpm release downloaded"
+else
+    echo "==> No repo-rpm release yet — building from a clean local repo"
+fi
+
+chown -R builder:builder "$LOCALREPO"
+
+if find "$LOCALREPO" \
+    -maxdepth 1 \
+    -name '*.rpm' \
+    -print -quit 2>/dev/null |
+    grep -q .
+then
+
+    echo "==> Creating local repository metadata"
+
+    su builder -c \
+        "createrepo_c '$LOCALREPO'"
+
+    cat > /etc/yum.repos.d/local-personal.repo <<EOF
+[local-personal]
+name=Personal OpenMandriva repository
+baseurl=file://$LOCALREPO
+enabled=1
+gpgcheck=0
+priority=1
+EOF
+
+    dnf clean metadata
+    dnf makecache
+else
+    echo "==> Personal repository is empty"
+fi
+
+# ============================================================
+# Show final repositories
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Final repositories"
+echo "============================================================"
+
+dnf repolist
+
+# ============================================================
+# Verify BuildRequires providers
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Build dependency providers"
+echo "============================================================"
+
+# Every BuildRequires the spec actually declares, with version
+# comparisons stripped, so this stays correct as specs change
+# instead of drifting out of sync with a fixed list.
+grep -E '^BuildRequires:' "$ABF/$PKG.spec" |
+    sed -E 's/^BuildRequires:[[:space:]]*//' |
+    sed -E 's/[[:space:]]*(>=|<=|==|=|>|<)[[:space:]]*[^[:space:]]+//g' |
+    tr ',' '\n' |
+    sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' |
+    sed '/^$/d' |
+    sort -u |
+    while read -r req; do
+        echo
+        echo "==> $req"
+        dnf provides "$req" || true
+    done
+
+# ============================================================
+# Lint spec
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Linting spec"
+echo "============================================================"
+
+if ! su builder -c "rpmlint '$ABF/$PKG.spec'"; then
+    echo "==> rpmlint reported issues (non-fatal)"
+fi
+
+# ============================================================
+# Install BuildRequires
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Installing BuildRequires"
+echo "============================================================"
+
+dnf builddep -y "$ABF/$PKG.spec"
+
+# ============================================================
+# Verify Cargo / Rust environment (only for Rust packages)
+# ============================================================
+
+if grep -Eq '^BuildRequires:\s*(cargo|rust-packaging)\b' "$ABF/$PKG.spec"; then
+    echo
+    echo "============================================================"
+    echo " Rust environment"
+    echo "============================================================"
+
+    command -v cargo
+    cargo --version
+    rustc --version
+
+    echo
+    echo "==> Cargo target"
+    rustc -vV
+
+    # A spec can declare a version floor via `BuildRequires: rust >= X` /
+    # `cargo >= X` (see niri, i3status-rust). Check it explicitly and fail
+    # fast with a clear message: a builder older than the floor otherwise
+    # fails deep inside cargo's manifest parsing (e.g. a crate using
+    # `edition = "2024"`, which needs cargo/rustc >= 1.85, errors with an
+    # opaque "feature `edition2024` is required" instead of naming the
+    # actual version gap).
+    echo
+    echo "==> Checking declared minimum rust/cargo version"
+
+    check_min_version() {
+        tool="$1"
+        installed="$2"
+        required="$3"
+
+        lowest=$(printf '%s\n%s\n' "$installed" "$required" | sort -V | head -n1)
+        if [ "$lowest" != "$required" ]; then
+            echo "ERROR: $tool $installed is older than $PKG.spec's declared minimum ($required)" >&2
+            exit 1
+        fi
+        echo "    $tool $installed satisfies declared minimum >= $required"
+    }
+
+    RUSTC_VER=$(rustc --version | awk '{print $2}')
+    CARGO_VER=$(cargo --version | awk '{print $2}')
+
+    RUST_MIN=$(grep -E '^BuildRequires:[[:space:]]*rust[[:space:]]*>=' "$ABF/$PKG.spec" |
+        sed -E 's/^BuildRequires:[[:space:]]*rust[[:space:]]*>=[[:space:]]*//' | tr -d '[:space:]' || true)
+    CARGO_MIN=$(grep -E '^BuildRequires:[[:space:]]*cargo[[:space:]]*>=' "$ABF/$PKG.spec" |
+        sed -E 's/^BuildRequires:[[:space:]]*cargo[[:space:]]*>=[[:space:]]*//' | tr -d '[:space:]' || true)
+
+    [ -n "$RUST_MIN" ] && check_min_version rustc "$RUSTC_VER" "$RUST_MIN"
+    [ -n "$CARGO_MIN" ] && check_min_version cargo "$CARGO_VER" "$CARGO_MIN"
+fi
+
+# ============================================================
+# Vendor Rust dependencies (only if the spec ships a vendored
+# Source, i.e. one named "*-vendor.tar.xz"). This regenerates
+# the vendor tarball fresh every run from the exact source the
+# spec's Version/URL resolve to, instead of committing a stale
+# binary blob to the repo. Any future Rust package that follows
+# the same Source1 naming convention picks this up automatically
+# — nothing here is specific to one package name.
+# ============================================================
+
+VENDOR_LINE=$(grep -E '^Source1:' "$ABF/$PKG.spec" || true)
+
+if printf '%s' "$VENDOR_LINE" | grep -q -- '-vendor\.tar\.xz$'; then
+    echo
+    echo "============================================================"
+    echo " Vendoring Rust dependencies for $PKG"
+    echo "============================================================"
+
+    # Ask rpm to resolve the spec's own macros for us instead of
+    # re-implementing macro expansion by hand.
+    SPEC_VERSION=$(rpm -q --qf '%{VERSION}\n' --specfile "$ABF/$PKG.spec" | head -n1)
+    SPEC_URL=$(rpm -q --qf '%{URL}\n' --specfile "$ABF/$PKG.spec" | head -n1)
+
+    VENDOR_FILE="$PKG-$SPEC_VERSION-vendor.tar.xz"
+    SRC_TARBALL="$PKG-$SPEC_VERSION.tar.gz"
+    # Matches the Source0 convention: %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
+    SRC_URL="$SPEC_URL/archive/v$SPEC_VERSION/$SRC_TARBALL"
+
+    if [ -f "$ABF/$VENDOR_FILE" ]; then
+        echo "==> $VENDOR_FILE already present in specs/$PKG/, skipping regeneration"
+    else
+        echo "==> Building $VENDOR_FILE from $SRC_URL"
+
+        # Any Patch0.. declared in the spec (e.g. one that changes
+        # Cargo.toml dependency features) must land in vendor-src
+        # *before* `cargo vendor` runs, or the vendored crates won't
+        # match what the patched Cargo.toml actually needs — %prep's
+        # own patching happens in a separate checkout and has no
+        # effect on this one. Applied with `patch -p1`, matching the
+        # `-p1` %autosetup already uses in %prep.
+        PATCH_FILES=$(
+            grep -E '^Patch[0-9]+:' "$ABF/$PKG.spec" |
+            sort -t: -k1,1V |
+            sed -E 's/^Patch[0-9]+:[[:space:]]*//'
+        )
+
+        su builder -c "
+            set -eu
+            cd '$ABF'
+            curl -fL -o '$SRC_TARBALL' '$SRC_URL'
+            rm -rf vendor-src
+            mkdir vendor-src
+            tar -xf '$SRC_TARBALL' -C vendor-src --strip-components=1
+            cd vendor-src
+            for p in $PATCH_FILES; do
+                echo \"==> Applying \$p before vendoring\"
+                patch -p1 < \"../\$p\"
+            done
+            mkdir -p .cargo
+            cargo vendor vendor > .cargo/config-vendor.toml
+            gtar --sort=name --owner=0 --group=0 --numeric-owner \
+                -cJf '../$VENDOR_FILE' vendor
+        "
+
+        rm -f "$ABF/$SRC_TARBALL"
+        rm -rf "$ABF/vendor-src"
+    fi
+
+    ls -la "$ABF/$VENDOR_FILE"
+fi
+
+# ============================================================
+# Verify pkg-config modules
+# ============================================================
+
+echo
+echo "============================================================"
+echo " pkg-config module environment"
+echo "============================================================"
+
+if command -v pkg-config >/dev/null 2>&1; then
+    grep -oE 'pkgconfig\([^)]+\)' "$ABF/$PKG.spec" |
+        sed -E 's/pkgconfig\(([^)]+)\)/\1/' |
+        sort -u |
+        while read -r mod; do
+            echo
+            echo "==> $mod"
+            pkg-config --modversion "$mod" || true
+            pkg-config --cflags "$mod" || true
+            pkg-config --libs "$mod" || true
+        done
+fi
+
+# ============================================================
+# Build
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Running abb build"
+echo "============================================================"
+
+su builder -c "
+    cd '$ABF'
+    abb build
+"
+
+# ============================================================
+# Locate RPMs
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Built RPMs"
+echo "============================================================"
+
+RPMDIR="$ABF/RPMS"
+
+if [ ! -d "$RPMDIR" ]; then
+    echo "ERROR: RPM output directory does not exist: $RPMDIR" >&2
+    exit 1
+fi
+
+if ! find "$RPMDIR" -name '*.rpm' -print -quit |
+    grep -q .
+then
+    echo "ERROR: No RPMs were produced" >&2
+    exit 1
+fi
+
+find "$RPMDIR" -name '*.rpm' -print
+
+# ============================================================
+# Verify RPM architecture
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Verifying RPM architecture"
+echo "============================================================"
+
+BAD_ARCH=0
+
+for rpm_file in "$RPMDIR"/*.rpm; do
+    [ -f "$rpm_file" ] || continue
+
+    arch=$(rpm -qp --qf '%{ARCH}' "$rpm_file")
+    nvra=$(rpm -qp --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}' "$rpm_file")
+
+    echo "$nvra"
+
+    case "$arch" in
+        "$TARGET_ARCH")
+            echo "  OK: $TARGET_ARCH"
+            ;;
+        noarch)
+            echo "  OK: noarch"
+            ;;
+        *)
+            echo "  ERROR: unexpected architecture: $arch (expected $TARGET_ARCH or noarch)" >&2
+            BAD_ARCH=1
+            ;;
+    esac
+done
+
+if [ "$BAD_ARCH" -ne 0 ]; then
+    echo
+    echo "ERROR: One or more RPMs are not $TARGET_ARCH/noarch." >&2
+    exit 1
+fi
+
+# ============================================================
+# Prepare output directories
+# ============================================================
+
+echo
+echo "==> Preparing output directories"
+
+rm -rf "$ROOT/out" "$ROOT/merged"
+
+mkdir -p "$ROOT/out"
+mkdir -p "$ROOT/merged"
+
+# Current build
+find "$RPMDIR" \
+    -name '*.rpm' \
+    -exec cp {} "$ROOT/out/" \;
+
+# Previous personal repository
+cp "$LOCALREPO"/*.rpm \
+    "$ROOT/merged/" 2>/dev/null || true
+
+# Current build
+find "$RPMDIR" \
+    -name '*.rpm' \
+    -exec cp {} "$ROOT/merged/" \;
+
+# ============================================================
+# Lint built RPMs
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Linting built RPMs"
+echo "============================================================"
+
+if ! rpmlint "$ROOT"/out/*.rpm; then
+    echo "==> rpmlint reported issues on built RPMs (non-fatal)"
+fi
+
+# ============================================================
+# De-duplicate repository
+# ============================================================
+
+echo
+echo "============================================================"
+echo " De-duplicating merged/"
+echo "============================================================"
+
+(
+    cd "$ROOT/merged"
+
+    for rpm_file in *.rpm; do
+        [ -f "$rpm_file" ] || continue
+
+        # Extract package name using RPM itself.
+        pkg_name=$(rpm -qp --qf '%{NAME}' "$rpm_file")
+
+        # Collect "version-release<TAB>filename" pairs for this package.
+        matches=$(
+            for candidate in *.rpm; do
+                [ -f "$candidate" ] || continue
+
+                candidate_name=$(rpm -qp --qf '%{NAME}' "$candidate")
+
+                if [ "$candidate_name" = "$pkg_name" ]; then
+                    vr=$(rpm -qp --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}' "$candidate")
+                    printf '%s\t%s\n' "$vr" "$candidate"
+                fi
+            done
+        )
+
+        if [ -z "$matches" ]; then
+            continue
+        fi
+
+        # Sort by version-release (field 1) and take the newest filename.
+        newest=$(printf '%s\n' "$matches" | sort -t "$(printf '\t')" -k1,1V | tail -n1 | cut -f2)
+
+        printf '%s\n' "$matches" |
+        cut -f2 |
+        while read -r f; do
+            [ -n "$f" ] || continue
+            if [ "$f" != "$newest" ]; then
+                echo "==> Removing stale $f"
+                echo "    superseded by $newest"
+                rm -f -- "$f"
+            fi
+        done
+    done
+)
+
+# ============================================================
+# Create repository metadata
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Creating repository metadata"
+echo "============================================================"
+
+# --baseurl writes an xml:base into the metadata so dnf downloads the RPMs
+# from the repo-rpm release while repodata/ itself is served from
+# GitHub Pages (release assets are flat and cannot hold a repodata/ dir).
+createrepo_c \
+    --baseurl "https://github.com/${REPO}/releases/download/repo-rpm/" \
+    "$ROOT/merged"
+
+# ============================================================
+# Final verification
+# ============================================================
+
+echo
+echo "============================================================"
+echo " Final package list"
+echo "============================================================"
+
+for rpm_file in "$ROOT"/out/*.rpm; do
+    [ -f "$rpm_file" ] || continue
+
+    rpm -qp \
+        --qf '%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}.rpm\n' \
+        "$rpm_file"
+done
+
+echo
+echo "============================================================"
+echo " Build complete"
+echo "============================================================"
+
+echo
+echo "Current build:"
+find "$ROOT/out" -name '*.rpm' -print
+
+echo
+echo "Personal repository:"
+find "$ROOT/merged" -maxdepth 1 -name '*.rpm' -print
+
+echo
+echo "Target RPM architecture:"
+rpm --eval '%{_target_cpu}'
+
+echo
+echo "Repository:"
+dnf repolist
+
+echo
+echo "Build successful."
