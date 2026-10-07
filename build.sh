@@ -37,6 +37,11 @@ echo "Repo    : $REPO"
 echo "Arch    : $TARGET_ARCH"
 echo
 
+echo "==> Pointing OpenMandriva repos at $TARGET_ARCH"
+grep -rEn 'baseurl|metalink|mirrorlist' /etc/yum.repos.d/ || true
+sed -i "s#/x86_64/#/$TARGET_ARCH/#g; s#arch=x86_64#arch=$TARGET_ARCH#g" /etc/yum.repos.d/*.repo
+grep -rEn 'baseurl|metalink|mirrorlist' /etc/yum.repos.d/
+
 # ============================================================
 # Synchronize OpenMandriva Rolling / ROME
 # ============================================================
@@ -76,6 +81,17 @@ dnf install -y \
     github-cli \
     hostname \
     gnutar
+
+echo "==> Forcing rpm platform to $TARGET_ARCH"
+dnf install -y rpm-openmandriva-setup
+mkdir -p /etc/rpm
+echo "${TARGET_ARCH}-openmandriva-linux" > /etc/rpm/platform
+
+[ "$(rpm --eval '%{_target_cpu}')" = "$TARGET_ARCH" ] || {
+    echo "ERROR: rpm target is not $TARGET_ARCH" >&2
+    exit 1
+}
+rpm --eval '%{optflags}'   # should include -march=znver1
 
 # ============================================================
 # Create builder user
