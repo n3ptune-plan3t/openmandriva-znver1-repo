@@ -86,7 +86,12 @@ echo "${TARGET_ARCH}-openmandriva-linux" > /etc/rpm/platform
     echo "ERROR: rpm target is not $TARGET_ARCH" >&2
     exit 1
 }
-rpm --eval '%{optflags}'   # should include -march=znver1
+OPTFLAGS=$(rpm --eval '%{optflags}')
+echo "optflags: $OPTFLAGS"
+case "$OPTFLAGS" in
+    *"-march=$TARGET_ARCH"*) ;;
+    *) echo "WARNING: optflags has no -march=$TARGET_ARCH — packages may not be tuned for it" >&2 ;;
+esac
 
 # ============================================================
 # Create builder user

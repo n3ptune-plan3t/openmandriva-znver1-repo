@@ -8,7 +8,7 @@ on:
         required: true
 
 # Every run — regardless of how many packages it builds — reads,
-# merges into, and republishes the single shared repo-rpm release.
+# merges into, and republishes the single shared repo-rpm-znver1 release.
 # Without a shared concurrency group, two separate dispatches (e.g.
 # building libtracefs, then powertop, without waiting for the first
 # to finish) can run in parallel containers and race on that
@@ -17,7 +17,7 @@ on:
 # cancel-in-progress is false so runs queue rather than one killing
 # the other mid-publish.
 concurrency:
-  group: oma-personal-repo-build
+  group: oma-znver1-repo-build
   cancel-in-progress: false
 
 permissions:
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
-      # Builds share and publish to the same repo-rpm release below;
+      # Builds share and publish to the same repo-rpm-znver1 release below;
       # running them one at a time avoids two jobs racing to
       # upload/delete assets on that shared release.
       max-parallel: 1
@@ -102,13 +102,15 @@ jobs:
             base=$(basename "$f")
             pkg=$(echo "$base" | sed -E 's/-[^-]+-[^-]+\.[a-zA-Z0-9_]+\.rpm$//')
 
-            gh release view repo-rpm \
+            gh release view repo-rpm-znver1 \
+              --repo "${{ github.repository }}" \
               --json assets \
               --jq '.assets[].name' \
               2>/dev/null \
-              | grep "^${pkg}-" \
+              | grep -E "^${pkg}-[0-9]" \
               | xargs -r -I{} gh release delete-asset \
-                  repo-rpm "{}" --yes || true
+                  repo-rpm-znver1 "{}" --yes \
+                  --repo "${{ github.repository }}" || true
           done
 
       - name: Publish rolling repo release (RPMs only)
@@ -116,8 +118,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          tag_name: repo-rpm
-          name: "Personal repo snapshot (RPM)"
+          tag_name: repo-rpm-znver1
+          name: "Personal repo snapshot (RPM, znver1)"
           files: merged/*.rpm
 
       # Release assets are flat, so dnf cannot read repodata/ from the
@@ -148,11 +150,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view repo-rpm \
+          gh release view repo-rpm-znver1 \
             --repo "${{ github.repository }}" \
             --json assets --jq '.assets[].name' 2>/dev/null \
             | grep -E '(^repomd\.xml|-(primary|filelists|other)\.(xml|sqlite)(\.(gz|zst|bz2|xz))?)$' \
-            | xargs -r -I{} gh release delete-asset repo-rpm "{}" \
+            | xargs -r -I{} gh release delete-asset repo-rpm-znver1 "{}" \
                 --yes --repo "${{ github.repository }}" || true
 
       - name: Upload built package
