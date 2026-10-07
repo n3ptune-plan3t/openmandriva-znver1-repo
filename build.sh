@@ -37,11 +37,6 @@ echo "Repo    : $REPO"
 echo "Arch    : $TARGET_ARCH"
 echo
 
-echo "==> Pointing OpenMandriva repos at $TARGET_ARCH"
-grep -rEn 'baseurl|metalink|mirrorlist' /etc/yum.repos.d/ || true
-sed -i "s#/x86_64/#/$TARGET_ARCH/#g; s#arch=x86_64#arch=$TARGET_ARCH#g" /etc/yum.repos.d/*.repo
-grep -rEn 'baseurl|metalink|mirrorlist' /etc/yum.repos.d/
-
 # ============================================================
 # Synchronize OpenMandriva Rolling / ROME
 # ============================================================
