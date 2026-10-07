@@ -20,15 +20,64 @@ concurrency:
   group: oma-znver1-repo-build
   cancel-in-progress: false
 
+# RPMs, per-package releases and the repodata (gh-pages) are published to a
+# separate repository so this one stays code-only. Needs the RELEASE_TOKEN
+# secret: a PAT with write access to that repo (GITHUB_TOKEN is limited to
+# this repo). Override the target with the RELEASE_REPO repository variable.
+env:
+  RELEASE_REPO: ${{ vars.RELEASE_REPO || format('{0}/oma-znver1-rpms', github.repository_owner) }}
+
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   plan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     outputs:
       matrix: ${{ steps.set.outputs.matrix }}
+      image: ${{ steps.img.outputs.image }}
+      image_exists: ${{ steps.img.outputs.exists }}
     steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure release repository exists
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          set -eu
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "ERROR: secret RELEASE_TOKEN is not set (PAT with write access to $RELEASE_REPO)" >&2
+            exit 1
+          fi
+          if gh repo view "$RELEASE_REPO" >/dev/null 2>&1; then
+            echo "Release repo $RELEASE_REPO exists"
+          else
+            echo "Creating release repo $RELEASE_REPO"
+            gh repo create "$RELEASE_REPO" --public --add-readme \
+              --description "Binary RPM repository (znver1) built by ${{ github.repository }}"
+          fi
+
+      - name: Check for builder image
+        id: img
+        run: |
+          owner=$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')
+          image="ghcr.io/${owner}/oma-znver1-builder:latest"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          if docker manifest inspect "$image" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Builder image not found — it will be created first"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build package matrix from input
         id: set
         run: |
@@ -39,9 +88,25 @@ jobs:
             jq -sc '{package: .}')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
-  build:
+  # First run only: create the pre-synced builder image. After that the
+  # weekly build-image.yml schedule keeps it fresh.
+  image:
     needs: plan
+    if: needs.plan.outputs.image_exists != 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-image.yml
+
+  build:
+    needs: [plan, image]
+    # `image` is skipped whenever the image already exists, which would
+    # otherwise skip this job too.
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.image.result == 'success' || needs.image.result == 'skipped') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     strategy:
       matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
       # Builds share and publish to the same repo-rpm-znver1 release below;
@@ -51,73 +116,63 @@ jobs:
       fail-fast: false
 
     container:
-        image: openmandriva/minimal:rolling
-        options: --platform linux/amd64 --privileged
+      image: ${{ needs.plan.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --platform linux/amd64 --privileged
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compute cache week
-        id: cachekey
-        run: echo "week=$(date +%Y-W%V)" >> "$GITHUB_OUTPUT"
-
-      - name: Cache dnf package downloads
-        uses: actions/cache@v4
-        with:
-          path: /var/cache/dnf
-          key: dnf-pkgcache-${{ steps.cachekey.outputs.week }}
-          restore-keys: |
-            dnf-pkgcache-
-
       - name: Build package
         run: sh build.sh
         env:
           PKG: ${{ matrix.package }}
-          REPO: ${{ github.repository }}
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
 
       - name: Delete previous release for this package
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           gh release delete "${{ matrix.package }}" \
             --yes \
             --cleanup-tag \
-            --repo "${{ github.repository }}" || true
+            --repo "$RELEASE_REPO" || true
 
       - name: Publish per-package release
         uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         with:
+          repository: ${{ env.RELEASE_REPO }}
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ matrix.package }}
           files: out/*.rpm
 
       - name: Remove stale versions from the rolling repo
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           for f in merged/*.rpm; do
             base=$(basename "$f")
             pkg=$(echo "$base" | sed -E 's/-[^-]+-[^-]+\.[a-zA-Z0-9_]+\.rpm$//')
 
             gh release view repo-rpm-znver1 \
-              --repo "${{ github.repository }}" \
+              --repo "$RELEASE_REPO" \
               --json assets \
               --jq '.assets[].name' \
               2>/dev/null \
               | grep -E "^${pkg}-[0-9]" \
               | xargs -r -I{} gh release delete-asset \
                   repo-rpm-znver1 "{}" --yes \
-                  --repo "${{ github.repository }}" || true
+                  --repo "$RELEASE_REPO" || true
           done
 
       - name: Publish rolling repo release (RPMs only)
         uses: softprops/action-gh-release@v2
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
         with:
+          repository: ${{ env.RELEASE_REPO }}
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: repo-rpm-znver1
           name: "Personal repo snapshot (RPM, znver1)"
           files: merged/*.rpm
@@ -127,7 +182,7 @@ jobs:
       # the metadata's xml:base points back at the release for the RPMs.
       - name: Publish repodata to gh-pages
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           set -eu
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -141,21 +196,21 @@ jobs:
           git add -A
           git commit -q -m "Update repodata (${{ matrix.package }})"
           git remote add origin \
-            "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+            "https://x-access-token:${GH_TOKEN}@github.com/${RELEASE_REPO}.git"
           git push -f origin gh-pages
 
       # Legacy cleanup: earlier runs uploaded repomd.xml and the
       # hash-named primary/filelists/other files as release assets.
       - name: Remove old metadata assets from release
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           gh release view repo-rpm-znver1 \
-            --repo "${{ github.repository }}" \
+            --repo "$RELEASE_REPO" \
             --json assets --jq '.assets[].name' 2>/dev/null \
             | grep -E '(^repomd\.xml|-(primary|filelists|other)\.(xml|sqlite)(\.(gz|zst|bz2|xz))?)$' \
             | xargs -r -I{} gh release delete-asset repo-rpm-znver1 "{}" \
-                --yes --repo "${{ github.repository }}" || true
+                --yes --repo "$RELEASE_REPO" || true
 
       - name: Upload built package
         uses: actions/upload-artifact@v4

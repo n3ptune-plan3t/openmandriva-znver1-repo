@@ -10,8 +10,8 @@ if [ -z "${PKG:-}" ]; then
     exit 1
 fi
 
-if [ -z "${REPO:-}" ]; then
-    echo "REPO is not set" >&2
+if [ -z "${RELEASE_REPO:-}" ]; then
+    echo "RELEASE_REPO is not set" >&2
     exit 1
 fi
 
@@ -33,7 +33,7 @@ echo "============================================================"
 echo
 echo "Package : $PKG"
 echo "Spec    : $SPEC"
-echo "Repo    : $REPO"
+echo "Repo    : $RELEASE_REPO"
 echo "Arch    : $TARGET_ARCH"
 echo
 
@@ -44,41 +44,97 @@ echo
 echo "==> OpenMandriva system"
 cat /etc/os-release
 
-echo
-echo "==> Initial repositories"
-dnf repolist
+# The weekly-built builder image (docker/Dockerfile) is already
+# distro-synced and has the packaging tools and builder user baked in.
+# Fall back to doing that work here when running on a plain
+# openmandriva/minimal image.
+IMAGE_MARK=/etc/oma-builder-image
 
-echo
-echo "==> Synchronizing Rolling system"
+if [ -f "$IMAGE_MARK" ]; then
+    IMAGE_DATE=$(cat "$IMAGE_MARK")
+    echo
+    echo "==> Using pre-synced builder image (built $IMAGE_DATE) — skipping distro-sync and tool install"
 
-dnf clean all
-dnf makecache
-dnf distro-sync -y
+    if built_ts=$(date -u -d "$IMAGE_DATE" +%s 2>/dev/null); then
+        age_days=$(( ($(date -u +%s) - built_ts) / 86400 ))
+        if [ "$age_days" -gt 10 ]; then
+            echo "WARNING: builder image is $age_days days old — is the weekly build-image workflow running?" >&2
+        fi
+    fi
 
-echo
-echo "==> Repositories after synchronization"
-dnf repolist
+    echo
+    echo "==> Repositories"
+    dnf repolist
+else
+    echo
+    echo "==> Initial repositories"
+    dnf repolist
 
-# ============================================================
-# Install build infrastructure
-# ============================================================
+    echo
+    echo "==> Synchronizing Rolling system"
 
-echo
-echo "==> Installing packaging tools"
+    dnf clean all
+    dnf makecache
+    dnf distro-sync -y
 
-dnf install -y \
-    packaging-tools \
-    rpmlint \
-    git \
-    sudo \
-    curl \
-    createrepo_c \
-    github-cli \
-    hostname \
-    gnutar
+    echo
+    echo "==> Repositories after synchronization"
+    dnf repolist
+
+    echo
+    echo "==> Installing packaging tools"
+
+    dnf install -y \
+        packaging-tools \
+        rpmlint \
+        git \
+        sudo \
+        curl \
+        createrepo_c \
+        github-cli \
+        hostname \
+        gnutar
+
+    dnf install -y rpm-openmandriva-setup
+fi
+
+# If the spec restricts its architectures, build for that arch only instead
+# of forcing znver1. Parsed with rpm (not grep) so macros such as
+# %{x86_64} are expanded. Needs rpm-openmandriva-setup for those macros.
+spec_tag() {
+    rpm -q --specfile --qf "[%{$1} ]\n" "$SPEC" 2>/dev/null |
+        head -n1 | tr -s '[:space:]' ' ' | sed -E 's/^ //; s/ $//' || true
+}
+SPEC_EXCL=$(spec_tag EXCLUSIVEARCH)
+SPEC_NOT=$(spec_tag EXCLUDEARCH)
+
+pick_arch() {
+    case " $1 " in
+        *" x86_64 "*) echo x86_64 ;;
+        *) echo "${1%% *}" ;;
+    esac
+}
+
+if [ -n "$SPEC_EXCL" ]; then
+    case " $SPEC_EXCL " in
+        *" $TARGET_ARCH "*) ;;
+        *)
+            NEW_ARCH=$(pick_arch "$SPEC_EXCL")
+            echo "==> $PKG.spec has ExclusiveArch: $SPEC_EXCL"
+            echo "==> $TARGET_ARCH not allowed — building for $NEW_ARCH only"
+            TARGET_ARCH="$NEW_ARCH"
+            ;;
+    esac
+fi
+
+case " $SPEC_NOT " in
+    *" $TARGET_ARCH "*)
+        echo "==> $PKG.spec has ExcludeArch: $SPEC_NOT — falling back to x86_64"
+        TARGET_ARCH=x86_64
+        ;;
+esac
 
 echo "==> Forcing rpm platform to $TARGET_ARCH"
-dnf install -y rpm-openmandriva-setup
 mkdir -p /etc/rpm
 echo "${TARGET_ARCH}-openmandriva-linux" > /etc/rpm/platform
 
@@ -90,7 +146,7 @@ OPTFLAGS=$(rpm --eval '%{optflags}')
 echo "optflags: $OPTFLAGS"
 case "$OPTFLAGS" in
     *"-march=$TARGET_ARCH"*) ;;
-    *) echo "WARNING: optflags has no -march=$TARGET_ARCH — packages may not be tuned for it" >&2 ;;
+    *) [ "$TARGET_ARCH" = x86_64 ] || echo "WARNING: optflags has no -march=$TARGET_ARCH — packages may not be tuned for it" >&2 ;;
 esac
 
 # ============================================================
@@ -203,7 +259,7 @@ rm -rf "$LOCALREPO"
 mkdir -p "$LOCALREPO"
 
 if gh release download repo-rpm-znver1 \
-    --repo "$REPO" \
+    --repo "$RELEASE_REPO" \
     --dir "$LOCALREPO" \
     --pattern '*.rpm' \
     --clobber 2>/dev/null
@@ -630,7 +686,7 @@ echo "============================================================"
 # from the repo-rpm-znver1 release while repodata/ itself is served from
 # GitHub Pages (release assets are flat and cannot hold a repodata/ dir).
 createrepo_c \
-    --baseurl "https://github.com/${REPO}/releases/download/repo-rpm-znver1/" \
+    --baseurl "https://github.com/${RELEASE_REPO}/releases/download/repo-rpm-znver1/" \
     "$ROOT/merged"
 
 # ============================================================
