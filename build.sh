@@ -202,15 +202,15 @@ echo "============================================================"
 rm -rf "$LOCALREPO"
 mkdir -p "$LOCALREPO"
 
-if gh release download repo-rpm \
+if gh release download repo-rpm-znver1 \
     --repo "$REPO" \
     --dir "$LOCALREPO" \
     --pattern '*.rpm' \
     --clobber 2>/dev/null
 then
-    echo "==> Previous repo-rpm release downloaded"
+    echo "==> Previous repo-rpm-znver1 release downloaded"
 else
-    echo "==> No repo-rpm release yet — building from a clean local repo"
+    echo "==> No repo-rpm-znver1 release yet — building from a clean local repo"
 fi
 
 chown -R builder:builder "$LOCALREPO"
@@ -627,10 +627,10 @@ echo " Creating repository metadata"
 echo "============================================================"
 
 # --baseurl writes an xml:base into the metadata so dnf downloads the RPMs
-# from the repo-rpm release while repodata/ itself is served from
+# from the repo-rpm-znver1 release while repodata/ itself is served from
 # GitHub Pages (release assets are flat and cannot hold a repodata/ dir).
 createrepo_c \
-    --baseurl "https://github.com/${REPO}/releases/download/repo-rpm/" \
+    --baseurl "https://github.com/${REPO}/releases/download/repo-rpm-znver1/" \
     "$ROOT/merged"
 
 # ============================================================
