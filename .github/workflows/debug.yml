@@ -1,0 +1,76 @@
+name: Debug personal repo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ghcr.io/n3ptune-plan3t/oma-znver1-builder:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+      options: --platform linux/amd64 --privileged
+    env:
+      RELEASE_REPO: n3ptune-plan3t/oma-znver1-rpms
+      GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+    steps:
+      - name: Platform, same as build.sh
+        run: |
+          mkdir -p /etc/rpm
+          echo "znver1-openmandriva-linux" > /etc/rpm/platform
+          rpm --eval '%{_target_cpu}'
+
+      - name: Pages metadata reachable?
+        run: |
+          curl -fsSI https://n3ptune-plan3t.github.io/oma-znver1-rpms/repodata/repomd.xml || echo "PAGES NOT SERVING repomd.xml"
+
+      - name: Release contents
+        run: |
+          gh release view repo-rpm-znver1 --repo "$RELEASE_REPO" --json assets --jq '.assets[].name' || echo "NO RELEASE"
+
+      - name: Test Pages repo in dnf
+        run: |
+          cat > /etc/yum.repos.d/znver1.repo <<'EOF'
+          [znver1]
+          name=znver1 personal
+          baseurl=https://n3ptune-plan3t.github.io/oma-znver1-rpms/
+          enabled=1
+          gpgcheck=0
+          metadata_expire=0
+          EOF
+          dnf makecache || true
+          echo "--- available from znver1:"
+          dnf repoquery --repo=znver1 --available || true
+          echo "--- libtraceevent-devel provides:"
+          dnf repoquery --repo=znver1 --provides libtraceevent-devel || true
+          echo "--- dnf provides:"
+          dnf provides 'pkgconfig(libtraceevent)' || true
+
+      - name: Test downloaded RPMs as a local repo (what build.sh does)
+        run: |
+          mkdir -p /tmp/localrepo
+          gh release download repo-rpm-znver1 --repo "$RELEASE_REPO" --dir /tmp/localrepo --pattern '*.rpm' || echo "DOWNLOAD FAILED"
+          ls -la /tmp/localrepo
+          for f in /tmp/localrepo/libtraceevent*.rpm; do
+            echo "=== $f"
+            rpm -qp --qf 'arch=%{ARCH} version=%{VERSION}\n' "$f"
+            rpm -qp --provides "$f" | grep -i pkgconfig || true
+          done
+          createrepo_c /tmp/localrepo
+          cat > /etc/yum.repos.d/local-test.repo <<'EOF'
+          [local-test]
+          name=local test
+          baseurl=file:///tmp/localrepo
+          enabled=1
+          gpgcheck=0
+          EOF
+          dnf makecache --repo=local-test || true
+          echo "--- available from local-test:"
+          dnf repoquery --repo=local-test --available || true
+          echo "--- dnf provides:"
+          dnf provides 'pkgconfig(libtraceevent)' || true
