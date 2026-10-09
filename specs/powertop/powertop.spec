@@ -1,10 +1,10 @@
 Summary:	Power saving diagnostic tool
-Name:		  powertop
-Version:	2.16
+Name:		 powertop
+Version:	2.16.1
 Release:	1
 License:	GPL-2.0-only
 Group:		System/Kernel and hardware
-Url:		  https://github.com/fenrus75/powertop
+Url:		 https://github.com/fenrus75/powertop
 Source0:	https://github.com/fenrus75/powertop/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 
 # Upstream switched to the meson build system as of 2.16
