@@ -1,7 +1,7 @@
 %bcond tests 1
 
 Name:           xwob
-Version:        0.1
+Version:        0.2
 Release:        1
 Summary:        Overlay volume (or anything) bar for both X11 and Wayland
 License:        GPL-3.0-only AND ISC
