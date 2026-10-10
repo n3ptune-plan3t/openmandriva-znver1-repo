@@ -5,7 +5,7 @@ Release:        1
 License:        GPL-3.0-or-later
 Group:          Graphical desktop/Other
 URL:            https://github.com/n3ptune-plan3t/waybar-settings
-Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+Source0:        https://github.com/n3ptune-plan3t/waybar-settings/archive/refs/tags/%{version}.tar.gz#/%{name}-%{version}.tar.gz
 
 BuildSystem:    cmake
 
