@@ -43,14 +43,25 @@ a period of inactivity or before sleep.
 %autosetup -p1
 %zig_prep
 # Fetch the dependencies from the local tarballs into a private global cache
-# (zig verifies the hashes against build.zig.zon), then expose them as
-# ./zig-pkg/<hash> for "zig build --system zig-pkg".
+# (zig verifies the hashes against build.zig.zon). zig 0.17 stores them there
+# as <hash>.tar.gz, but "zig build --system zig-pkg" wants unpacked
+# ./zig-pkg/<hash>/ directories, so unpack them ourselves.
 export ZIG_GLOBAL_CACHE_DIR=%{_zig_global_cache}
 mkdir -p "$ZIG_GLOBAL_CACHE_DIR" zig-pkg
 %{__zig} fetch %{_zig_fetch_options} %{SOURCE10}
 %{__zig} fetch %{_zig_fetch_options} %{SOURCE11}
-cp -a "$ZIG_GLOBAL_CACHE_DIR"/p/. zig-pkg/ || :
-ls zig-pkg
+for t in "$ZIG_GLOBAL_CACHE_DIR"/p/*.tar.gz; do
+	h=$(basename "$t" .tar.gz)
+	mkdir -p "zig-pkg/$h"
+	tar -xzf "$t" -C "zig-pkg/$h"
+	# tolerate a single wrapping directory inside the cached archive
+	if [ ! -e "zig-pkg/$h/build.zig.zon" ] && [ "$(ls -A "zig-pkg/$h" | wc -l)" = 1 ]; then
+		d=$(ls -A "zig-pkg/$h")
+		mv "zig-pkg/$h/$d"/* "zig-pkg/$h"/
+		rmdir "zig-pkg/$h/$d"
+	fi
+done
+ls zig-pkg/*
 
 %build
 export ZIG_GLOBAL_CACHE_DIR=%{_zig_global_cache}
