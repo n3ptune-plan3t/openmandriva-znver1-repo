@@ -10,16 +10,16 @@ Source0:        %{url}/archive/refs/tags/%{version}.tar.gz#/%{name}-%{version}.t
 BuildSystem:    cmake
 
 BuildRequires:  cmake
+BuildRequires:  ninja
 BuildRequires:  cmake(Qt6Widgets)
 
 Requires:       waybar
 Recommends:     procps-ng
 
 %description
-A small Qt6 Widgets application to edit Waybar (0.15) configuration:
+A small Qt6 Widgets application to edit Waybar configuration:
 bar options, module layout (drag and drop), per-module options, and an
-optional managed style.css block with predefined color schemes whose
-text and highlight contrast is enforced automatically. Unknown config
+optional managed style.css block with predefined color schemes. Unknown config
 keys are preserved, a backup is kept, and Waybar can be reloaded with
 SIGUSR2 from the GUI.
 
