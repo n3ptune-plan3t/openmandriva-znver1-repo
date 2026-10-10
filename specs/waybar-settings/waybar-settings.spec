@@ -1,6 +1,6 @@
 Name:           waybar-settings
 Summary:        Qt6 GUI settings manager for Waybar
-Version:        0.2
+Version:        0.2.1
 Release:        1
 License:        GPL-3.0-or-later
 Group:          Graphical desktop/Other
