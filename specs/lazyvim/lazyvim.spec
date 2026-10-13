@@ -11,10 +11,7 @@ Requires:       neovim >= 0.11.2
 Requires:       git
 Recommends:     ripgrep
 Recommends:     fd
-Recommends:     lazygit
-Recommends:     nodejs
 Recommends:     gcc
-Recommends:     make
 
 %description
 LazyVim is a Neovim setup powered by lazy.nvim to make it easy to
