@@ -60,6 +60,10 @@ Headers and pkg-config file needed to build Moksha modules.
 # Upstream tarball is a bare git snapshot: no configure script
 autoreconf -fi
 
+%conf -p
+export CFLAGS="%{optflags} -std=gnu17"
+export CXXFLAGS="%{optflags}"
+
 %install -a
 # Locale files are installed under the "enlightenment" gettext domain
 %find_lang enlightenment
