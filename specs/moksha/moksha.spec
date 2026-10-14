@@ -1,11 +1,10 @@
 %define commit 7c402e2331477aea08d702450acbd6504eee8193
 %define _disable_ld_no_undefined 1
 %define devname %{name}-devel
-%global __requires_exclude ^libepulse\\.so
 
 Name:           moksha
 Version:        0.4.2
-Release:        1
+Release:        2
 Summary:        Moksha desktop, a fork of Enlightenment E17 (from Bodhi Linux)
 License:        BSD-2-Clause
 Group:          Graphical desktop/Other
@@ -48,6 +47,13 @@ Conflicts:      enlightenment
 Moksha is a fork of the Enlightenment 17 window manager and desktop shell,
 maintained by Bodhi Linux. It is lightweight and highly configurable.
 
+%package -n moksha-epulse
+Summary:        PulseAudio mixer for the Moksha desktop
+Group:          Sound
+
+%description -n moksha-epulse
+Epulse, the PulseAudio mixer used by the Moksha desktop, with its library.
+
 %package -n %{devname}
 Summary:        Development files for Moksha modules
 Group:          Development/C
@@ -84,14 +90,16 @@ done
 %config(noreplace) %{_sysconfdir}/xdg/menus/e-applications.menu
 %{_bindir}/enlightenment
 %{_bindir}/enlightenment_*
-%{_bindir}/epulse
 %{_libdir}/enlightenment
-%{_libdir}/libepulse.so
 %{_datadir}/enlightenment
+%{_datadir}/xsessions/enlightenment.desktop
+
+%files -n moksha-epulse
+%{_bindir}/epulse
+%{_libdir}/libepulse.so
 %{_datadir}/epulse
 %{_datadir}/applications/epulse.desktop
 %{_datadir}/pixmaps/epulse.png
-%{_datadir}/xsessions/enlightenment.desktop
 
 %files -n %{devname}
 %{_includedir}/enlightenment
