@@ -28,7 +28,12 @@ BuildRequires:  pkgconfig(eeze)
 BuildRequires:  pkgconfig(elementary)
 BuildRequires:  pkgconfig(emotion)
 BuildRequires:  pkgconfig(systemd)
+BuildRequires:  pkgconfig(xcb)
+BuildRequires:  pkgconfig(xcb-shape)
+BuildRequires:  pkgconfig(xcb-keysyms)
+BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pam-devel
+
 
 Requires:       efl
 Requires:       moksha-menu
