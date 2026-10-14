@@ -1,0 +1,22 @@
+diff --git a/cmake/helpers/EflMacros.cmake b/cmake/helpers/EflMacros.cmake
+index 98ac3f7..f3bc105 100644
+--- a/cmake/helpers/EflMacros.cmake
++++ b/cmake/helpers/EflMacros.cmake
+@@ -69,7 +69,7 @@ function(EFL_OPTION_BACKEND _name _help)
+       foreach(_d ${${_backend}_LIBRARIES})
+         list(APPEND _ldflags "-l${_d}")
+       endforeach()
+-    else()
++#    else()
+     endif()
+     SET_GLOBAL(${_name}_CFLAGS "${_cflags}")
+     SET_GLOBAL(${_name}_LDFLAGS "${_ldflags}")
+@@ -516,7 +516,7 @@ function(EFL_PKG_CONFIG_EVAL_TO _var _name)
+         LIST_APPEND_GLOBAL(EFL_PKG_CONFIG_MISSING_OPTIONAL ${f})
+       else()
+         list(APPEND _missing ${f})
+-      else()
++#      else()
+       endif()
+     endif()
+   endforeach()

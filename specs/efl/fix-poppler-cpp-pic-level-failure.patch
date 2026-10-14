@@ -1,0 +1,21 @@
+--- ./m4/elm_quicklaunch.m4~	2017-05-23 23:40:29.403970198 +0100
++++ ./m4/elm_quicklaunch.m4	2017-05-24 00:26:30.154913476 +0100
+@@ -5,6 +5,7 @@
+ 
+ dnl Usage: ELM_QUICKLAUNCH
+ dnl add -pie -rdynamic to LDFLAGS and -fpie to CFLAGS
++dnl Removed in OpenMandriva as poppler-cpp and OM library called externally is not built with -fpie
+ 
+ AC_DEFUN([ELM_QUICKLAUNCH],
+ [
+@@ -12,8 +13,8 @@
+ old_LDFLAGS="$LDFLAGS"
+ old_CFLAGS="$CFLAGS"
+ 
+-LDFLAGS="$LDFLAGS -pie -rdynamic"
+-CFLAGS="$CFLAGS -fpie"
++LDFLAGS="$LDFLAGS -rdynamic"
++CFLAGS="$CFLAGS"
+ 
+ AC_LINK_IFELSE([AC_LANG_SOURCE([int main(){}])],
+         [AC_MSG_RESULT([yes])],
