@@ -1,4 +1,4 @@
-%define commit ee4fd3ec5507c3134a969c4c7b737f6b0c38e0c6
+%define commit 7c402e2331477aea08d702450acbd6504eee8193
 %define _disable_ld_no_undefined 1
 %define devname %{name}-devel
 
@@ -32,8 +32,8 @@ BuildRequires:  pkgconfig(xcb)
 BuildRequires:  pkgconfig(xcb-shape)
 BuildRequires:  pkgconfig(xcb-keysyms)
 BuildRequires:  pkgconfig(dbus-1)
+BuildRequires:  pkgconfig(udisks2)
 BuildRequires:  pam-devel
-
 
 Requires:       efl
 Requires:       moksha-menu
@@ -63,6 +63,13 @@ autoreconf -fi
 %conf -p
 export CFLAGS="%{optflags} -std=gnu17"
 export CXXFLAGS="%{optflags}"
+
+%build -p
+# Out-of-tree build: Makefiles write .edj files into module subdirs that
+# don't exist in the build dir, so mirror the source tree
+(cd src && find . -type d) | while read -r d; do
+  mkdir -p "_OMV_rpm_build/src/$d"
+done
 
 %install -a
 # Locale files are installed under the "enlightenment" gettext domain
