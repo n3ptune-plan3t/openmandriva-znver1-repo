@@ -1,6 +1,7 @@
 %define commit 7c402e2331477aea08d702450acbd6504eee8193
 %define _disable_ld_no_undefined 1
 %define devname %{name}-devel
+%global __requires_exclude ^libepulse\\.so
 
 Name:           moksha
 Version:        0.4.2
@@ -80,14 +81,19 @@ done
 %doc AUTHORS README.md
 %dir %{_sysconfdir}/enlightenment
 %config(noreplace) %{_sysconfdir}/enlightenment/sysactions.conf
+%config(noreplace) %{_sysconfdir}/xdg/menus/e-applications.menu
 %{_bindir}/enlightenment
 %{_bindir}/enlightenment_*
-# enlightenment_sys and enlightenment_backlight get their setuid bit
-# from upstream's install-data-hook; keep it.
+%{_bindir}/epulse
 %{_libdir}/enlightenment
+%{_libdir}/libepulse.so
 %{_datadir}/enlightenment
+%{_datadir}/epulse
+%{_datadir}/applications/epulse.desktop
+%{_datadir}/pixmaps/epulse.png
 %{_datadir}/xsessions/enlightenment.desktop
 
 %files -n %{devname}
 %{_includedir}/enlightenment
 %{_libdir}/pkgconfig/enlightenment.pc
+%{_libdir}/pkgconfig/everything.pc
