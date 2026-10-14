@@ -13,8 +13,10 @@ BuildSystem:    autotools
 BuildArch:      noarch
 
 BuildRequires:  autoconf
+BuildRequires:  make
 BuildRequires:  automake
 BuildRequires:  libtool
+BuildRequires:  slibtool
 BuildRequires:  intltool
 BuildRequires:  gettext-devel
 BuildRequires:  pkgconfig(glib-2.0)
