@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Filee
+GenericName=File Converter
+Comment=Convert files by dragging them onto a format
+Exec=filee-gui --convert %F
+Icon=filee
+Terminal=false
+Categories=Utility;FileTools;
+Keywords=convert;converter;image;pdf;audio;video;document;
+StartupNotify=false
