@@ -31,7 +31,6 @@ BuildRequires:  binutils
 BuildRequires:  tar
 BuildRequires:  xz
 BuildRequires:  hardlink
-BuildRequires:  patchelf
 
 Requires:       libtiff.so.6()(64bit)
 Requires:       ttf-wps-fonts
@@ -71,6 +70,9 @@ ar p %{SOURCE0} data.tar.xz | tar -xJ
 %build
 # Nothing to build; this is a prebuilt vendor binary package.
 
+%check
+# Prebuilt vendor binaries; there is no test suite to run.
+
 %install
 mkdir -p %{buildroot}
 cp -a ./opt %{buildroot}/
@@ -93,21 +95,11 @@ rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libdbus-1.so*
 rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libstdc++.so*
 rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libjpeg.so*
 
-# Plain config files that shipped with a spurious executable bit, which makes rpmlint try (and fail) to parse them as shell scripts.
-chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/cfgs/domain_qing.cfg || :
-chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/skins/2019gov/skin.ini || :
+# Plain config files that ship with a spurious executable bit, which makes rpmlint try (and fail) to parse them as shell scripts.
+find %{buildroot}/opt/kingsoft/wps-office -type f \( -name '*.ini' -o -name '*.cfg' \) -exec chmod -x {} +
 
-# Vendor libs may still be linked against libtiff.so.5, which Cooker doesn't ship (only .6).
-# Without this, "export to PDF" fails with a generic error.
-pushd %{buildroot}/opt/kingsoft/wps-office/office6
-for f in libpdfmain.so libqpdfpaint.so \
-         qt/plugins/imageformats/libqtiff.so \
-         addons/pdfbatchcompression/libpdfbatchcompressionapp.so; do
-    if [ -f "$f" ] && patchelf --print-needed "$f" | grep -qx 'libtiff.so.5'; then
-        patchelf --replace-needed libtiff.so.5 libtiff.so.6 "$f"
-    fi
-done
-popd
+# The vendor ships dangling symlinks (office6/libbz2.so -> libbz2.so.1.0.4, which isn't in the payload); drop them.
+find %{buildroot}/opt/kingsoft/wps-office -xtype l -delete
 
 # The vendor payload ships many byte-identical files (per-locale strings, repeated icons, duplicated .so files) -- hardlink them to reclaim space.
 hardlink -c %{buildroot} || :
@@ -145,7 +137,11 @@ update-desktop-database -q &> /dev/null || :
 %license opt/kingsoft/wps-office/office6/mui/default/EULA_linux.html
 %license opt/kingsoft/wps-office/office6/thirdpartylegalnotices.txt
 %doc opt/kingsoft/wps-office/office6/mui/default/Privacy_Linux.html
-%{_bindir}/*
+%{_bindir}/et
+%{_bindir}/misc
+%{_bindir}/wpp
+%{_bindir}/wps
+%{_bindir}/wpspdf
 %{_datadir}/applications/*.desktop
 %{_datadir}/icons/hicolor/*/*/*
 %{_datadir}/fonts/wps-office
