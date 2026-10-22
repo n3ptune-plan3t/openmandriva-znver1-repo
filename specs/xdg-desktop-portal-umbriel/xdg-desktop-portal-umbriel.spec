@@ -2,7 +2,7 @@
 %define snapdate 20261019
 
 Name:           xdg-desktop-portal-umbriel
-Summary:        xdg-desktop-portal backend for the Umbriel compositor
+Summary:        Portal backend for the Umbriel compositor
 Version:        0.1.0
 Release:        0.%{snapdate}.1
 License:        MIT
@@ -12,6 +12,7 @@ URL:            https://github.com/noctalia-dev/xdg-desktop-portal-umbriel
 Source0:        %{url}/archive/%{commit}/%{name}-%{commit}.tar.gz
 
 BuildSystem:    meson
+BuildRequires:  meson
 BuildOption:    -Dtests=false
 BuildOption:    -Dpicker=enabled
 
