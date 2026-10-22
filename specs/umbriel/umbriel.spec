@@ -13,6 +13,7 @@ URL:            https://github.com/noctalia-dev/umbriel
 Source0:        %{url}/archive/%{commit}/%{name}-%{commit}.tar.gz
 
 BuildSystem:    meson
+BuildRequires:  meson
 BuildOption:    -Dtests=disabled
 BuildOption:    -Dtracy=disabled
 
