@@ -483,6 +483,41 @@ if printf '%s' "$VENDOR_LINE" | grep -q -- '-vendor\.tar\.xz$'; then
 fi
 
 # ============================================================
+# Vendor NuGet packages (only if the spec's Source1 is named
+# "*-nuget-packages.tar.zst"). Builders have no NuGet access
+# during the build proper, so the cache is generated fresh here,
+# while the container still has network, by the package's own
+# make-nuget-cache.sh (which clones the tagged upstream source).
+# ============================================================
+
+if printf '%s' "$VENDOR_LINE" | grep -q -- '-nuget-packages\.tar\.zst$'; then
+    echo
+    echo "============================================================"
+    echo " Vendoring NuGet packages for $PKG"
+    echo "============================================================"
+
+    SPEC_VERSION=$(rpm -q --qf '%{VERSION}\n' --specfile "$ABF/$PKG.spec" | head -n1)
+    NUGET_FILE="$PKG-$SPEC_VERSION-nuget-packages.tar.zst"
+
+    if [ -f "$ABF/$NUGET_FILE" ]; then
+        echo "==> $NUGET_FILE already present in specs/$PKG/, skipping regeneration"
+    else
+        if [ ! -f "$ABF/make-nuget-cache.sh" ]; then
+            echo "ERROR: $PKG.spec wants $NUGET_FILE but specs/$PKG/make-nuget-cache.sh is missing" >&2
+            exit 1
+        fi
+        echo "==> Building $NUGET_FILE with make-nuget-cache.sh $SPEC_VERSION"
+        su builder -c "
+            set -eu
+            cd '$ABF'
+            sh ./make-nuget-cache.sh '$SPEC_VERSION'
+        "
+    fi
+
+    ls -la "$ABF/$NUGET_FILE"
+fi
+
+# ============================================================
 # Verify pkg-config modules
 # ============================================================
 
