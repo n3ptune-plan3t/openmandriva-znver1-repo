@@ -16,4 +16,4 @@ addFilter(r"wps-office\.x86_64: [EW]: binary-or-shlib-calls-gethostbyname")
 
 # No SPDX/rpmlint-recognized tag fits a closed-source EULA; see the
 # License: comment in the spec for the actual licensing situation.
-addFilter(r"wps-office\.(x86_64|noarch): W: invalid-license EULA")
+addFilter(r"wps-office(-mime)?\.(x86_64|noarch): W: invalid-license EULA")
