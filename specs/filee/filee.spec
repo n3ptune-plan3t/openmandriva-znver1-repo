@@ -1,6 +1,6 @@
 %global _enable_debug_packages %{nil}
 %global debug_package %{nil}
-# Everything under %{_libdir}/filee is a private .NET app directory (managed
+# Everything under %%{_libdir}/filee is a private .NET app directory (managed
 # assemblies + bundled native libs from NuGet: SkiaSharp, HarfBuzz, libuiohook).
 # Don't let rpm advertise or auto-require those private .so files.
 %global __provides_exclude_from ^%{_libdir}/%{name}/.*$
@@ -20,8 +20,8 @@ License:	MIT
 Group:		File tools
 URL:		https://filee.sh
 Source0:	https://github.com/KnifeLemon/Filee/archive/v%{version}/Filee-%{version}.tar.gz
-# Offline NuGet package cache (see make-nuget-cache.sh); ABF builders have no
-# network access, so `dotnet restore` has to be fed from this tarball.
+# Offline NuGet package cache, generated fresh by build.sh from
+# make-nuget-cache.sh (name must end in -nuget-packages.tar.zst)
 Source1:	%{name}-%{version}-nuget-packages.tar.zst
 Source2:	%{name}.desktop
 
@@ -31,6 +31,7 @@ BuildRequires:	dotnet-sdk >= 10.0
 BuildRequires:	dotnet-targeting-pack >= 10.0
 BuildRequires:	dotnet-apphost-pack >= 10.0
 BuildRequires:	imagemagick
+BuildRequires:	zstd
 BuildRequires:	desktop-file-utils
 BuildRequires:	pkgconfig(icu-uc)
 BuildRequires:	pkgconfig(openssl)
