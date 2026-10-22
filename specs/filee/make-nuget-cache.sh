@@ -1,8 +1,7 @@
 #!/bin/sh
-# Builds the offline NuGet cache tarball (Source1) for the filee spec.
-# Run on a machine with network access and dotnet-sdk-10.0 installed.
+# Run on a machine with network access and dotnet-sdk (>= 10) installed.
+# build.sh runs this automatically when Source1 ends in -nuget-packages.tar.zst.
 #   ./make-nuget-cache.sh 2.0.0
-# Then:  abb store filee-2.0.0-nuget-packages.tar.zst   (and Filee-2.0.0.tar.gz)
 set -eu
 ver="${1:?usage: $0 VERSION}"
 work=$(mktemp -d)
