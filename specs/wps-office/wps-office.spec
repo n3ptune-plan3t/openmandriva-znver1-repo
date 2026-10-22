@@ -1,30 +1,41 @@
-%global wpsver 11.1.0.11733
+%global wpsver 12.1.2.29183
 %global wpsrel %(echo %{wpsver} | awk -F. '{print $NF}')
+
+# The WPS CDN only serves the personal Linux build through a time-limited signed URL:
+# k = md5(secret + uri + unix-timestamp). Same scheme as the Arch/AUR wps-office-cn PKGBUILD
+# (https://gitlab.com/cwittlut/wps-tsk/-/blob/main/tsk.sh by Ryan Tsien).
+# Once the deb has been stored on file-store (abb store + .abf.yml) the URL is never refetched.
+%global wpshost https://wps-linux-personal.wpscdn.cn
+%global wpsuri /wps/download/ep/Linux2023/%{wpsrel}/wps-office_%{wpsver}.AK.preread.sw.Personal_806791_amd64.deb
+%global wpsts  %(date +%%s)
+%global wpskey 7f8faaaa468174dc1c9cd62e5f218a5b
+%global wpssig %(echo -n "%{wpskey}%{wpsuri}%{wpsts}" | md5sum | cut -d' ' -f1)
 
 Name:           wps-office
 Version:        %{wpsver}
-Release:        4
+Release:        1
 Summary:        Linux office suite with similar appearance to MS Office
 Group:          Office
 
 # The old Kingsoft WPS Community License has disappeared from the site.
-# There is an EULA in the archive that we ship as the package license file, plus a non-downloadable EULA only reachable from inside the program:
-# https://www.wps.com/eula?distsrc=2021help&lang=en_US&version=11.1.0.10920
+# There is an EULA in the archive that we ship as the package license file, plus a non-downloadable EULA only reachable from inside the program.
 License:        Custom (EULA)
 URL:            https://www.wps.com/
 
-# Upstream only distributes this as a prebuilt vendor RPM, so we just repack it rather than compiling anything ourselves.
-Source0:        http://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/linux/%{wpsrel}/%{name}-%{version}.XA-1.x86_64.rpm
+# Upstream only distributes this as a prebuilt vendor package (a .deb as of 12.x), so we just repack it rather than compiling anything ourselves.
+Source0:        %{wpshost}%{wpsuri}?t=%{wpsts}&k=%{wpssig}#/wps-office_%{version}_amd64.deb
 Source1:        wps-office.rpmlintrc
 
 ExclusiveArch:  %{x86_64}
-BuildRequires:  cpio
+BuildRequires:  binutils
+BuildRequires:  tar
+BuildRequires:  xz
 BuildRequires:  hardlink
-BuildRequires:  desktop-file-utils
 BuildRequires:  patchelf
 
 Requires:       libtiff.so.6()(64bit)
 Requires:       ttf-wps-fonts
+Recommends:     %{name}-mime = %{EVRD}
 
 # Vendor package ships prebuilt, unusual/bundled sonames -- don't try to scan them for auto Requires/Provides
 AutoReqProv:    no
@@ -40,10 +51,22 @@ WPS Office is an office suite whose interface closely mirrors Microsoft
 Office, providing word processing, spreadsheet, and presentation
 applications.
 
+This package ships the English (en_US) user interface only.
+
+%package mime
+Summary:        MIME type definitions provided by WPS Office
+Group:          Office
+BuildArch:      noarch
+Requires:       shared-mime-info
+
+%description mime
+MIME type definitions for WPS Office document formats, as shipped by Kingsoft.
+
 %prep
-# There's no tarball to unpack -- just create an empty build dir and extract the vendor RPM's payload into it ourselves.
+# There's no tarball to unpack -- just create an empty build dir and extract the vendor deb's data payload into it ourselves.
 %setup -q -c -T
-rpm2cpio %{SOURCE0} | cpio -idmv
+echo "77ffbdc1be76c834e1853c27ff9063e49d5d3b1f30b206d785761b5bf560c83b  %{SOURCE0}" | sha256sum -c -
+ar p %{SOURCE0} data.tar.xz | tar -xJ
 
 %build
 # Nothing to build; this is a prebuilt vendor binary package.
@@ -52,52 +75,61 @@ rpm2cpio %{SOURCE0} | cpio -idmv
 mkdir -p %{buildroot}
 cp -a ./opt %{buildroot}/
 
-# Disable background services
-chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/wpsd
-chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/wpscloudsvr
+# English UI only: drop the Simplified Chinese language pack (en_US and default stay)
+rm -rf %{buildroot}/opt/kingsoft/wps-office/office6/mui/zh_CN
 
-# Vendor's cron/logrotate/autostart config and non-working menu category
-rm -rf %{buildroot}/etc
+# Disable background services
+chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/wpsd || :
+chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/wpscloudsvr || :
 
 # Vendor postinst/prerm scripts we don't want to ship
 rm -rf %{buildroot}/opt/kingsoft/wps-office/INSTALL
 
-# Qt4 rpc libs, bundled systemd/libdbus, and bundled libstdc++ -- openmandriva already provides compatible versions of all of these.
+# Qt4 rpc libs, bundled systemd/libdbus, bundled libstdc++ (breaks with icu>=71.1) and bundled libjpeg -- openmandriva already provides compatible versions of all of these.
 rm -f %{buildroot}/opt/kingsoft/wps-office/office6/librpcetapi.so
 rm -f %{buildroot}/opt/kingsoft/wps-office/office6/librpcwpsapi.so
 rm -f %{buildroot}/opt/kingsoft/wps-office/office6/librpcwppapi.so
 rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libdbus-1.so*
-rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libstdc++.so.6
-rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libstdc++.so.6.0.28
+rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libstdc++.so*
+rm -f %{buildroot}/opt/kingsoft/wps-office/office6/libjpeg.so*
 
-# These two are plain config files but ship with a spurious executable bit, which makes rpmlint try (and fail) to parse them as shell scripts.
-chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/cfgs/domain_qing.cfg
-chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/skins/2019gov/skin.ini
+# Plain config files that shipped with a spurious executable bit, which makes rpmlint try (and fail) to parse them as shell scripts.
+chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/cfgs/domain_qing.cfg || :
+chmod -x %{buildroot}/opt/kingsoft/wps-office/office6/skins/2019gov/skin.ini || :
 
-# Vendor libs are linked against libtiff.so.5, which Cooker doesn't ship (only .6).
+# Vendor libs may still be linked against libtiff.so.5, which Cooker doesn't ship (only .6).
 # Without this, "export to PDF" fails with a generic error.
 pushd %{buildroot}/opt/kingsoft/wps-office/office6
 for f in libpdfmain.so libqpdfpaint.so \
          qt/plugins/imageformats/libqtiff.so \
          addons/pdfbatchcompression/libpdfbatchcompressionapp.so; do
-    patchelf --replace-needed libtiff.so.5 libtiff.so.6 "$f"
+    if [ -f "$f" ] && patchelf --print-needed "$f" | grep -qx 'libtiff.so.5'; then
+        patchelf --replace-needed libtiff.so.5 libtiff.so.6 "$f"
+    fi
 done
 popd
 
 # The vendor payload ships many byte-identical files (per-locale strings, repeated icons, duplicated .so files) -- hardlink them to reclaim space.
 hardlink -c %{buildroot} || :
 
-# Vendor .desktop files live under /opt
-mkdir -p %{buildroot}%{_datadir}/applications
-for f in %{buildroot}/opt/kingsoft/wps-office/desktops/*.desktop; do
-    desktop-file-install --dir=%{buildroot}%{_datadir}/applications "$f"
-done
-
-# Exec= in the vendor files points at /usr/bin/{et,wps,wpp,wpspdf}, which don't exist anywhere in the payload -- provide them ourselves.
+# Launchers: the deb's /usr/bin wrappers already point at /opt/kingsoft/wps-office
 mkdir -p %{buildroot}%{_bindir}
-for b in et wps wpp wpspdf; do
-    ln -s /opt/kingsoft/wps-office/office6/$b %{buildroot}%{_bindir}/$b
-done
+install -m755 usr/bin/* %{buildroot}%{_bindir}/
+
+# Desktop entries, icons, fonts and MIME definitions from the deb
+mkdir -p %{buildroot}%{_datadir}/applications
+cp -a usr/share/applications/*.desktop %{buildroot}%{_datadir}/applications/
+
+mkdir -p %{buildroot}%{_datadir}/icons
+cp -a usr/share/icons/* %{buildroot}%{_datadir}/icons/
+
+mkdir -p %{buildroot}%{_datadir}/fonts/wps-office
+install -m644 usr/share/fonts/wps-office/* %{buildroot}%{_datadir}/fonts/wps-office/
+
+mkdir -p %{buildroot}%{_datadir}/mime
+cp -a usr/share/mime/* %{buildroot}%{_datadir}/mime/
+
+# The vendor menu/desktop-directories (etc/xdg/menus, usr/share/desktop-directories) provide a non-working menu category -- not installed.
 
 %post
 update-desktop-database -q &> /dev/null || :
@@ -113,8 +145,10 @@ update-desktop-database -q &> /dev/null || :
 %license opt/kingsoft/wps-office/office6/mui/default/EULA_linux.html
 %license opt/kingsoft/wps-office/office6/thirdpartylegalnotices.txt
 %doc opt/kingsoft/wps-office/office6/mui/default/Privacy_Linux.html
-%{_bindir}/et
-%{_bindir}/wps
-%{_bindir}/wpp
-%{_bindir}/wpspdf
+%{_bindir}/*
 %{_datadir}/applications/*.desktop
+%{_datadir}/icons/hicolor/*/*/*
+%{_datadir}/fonts/wps-office
+
+%files mime
+%{_datadir}/mime/packages/*
