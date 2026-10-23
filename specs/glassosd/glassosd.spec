@@ -2,12 +2,13 @@
 
 Name:		glassosd
 Version:	0.3.3
-Release:	2
+Release:	3
 Summary:	Glass notification daemon, OSD and notification centre for Wayland
 License:	GPL-2.0-or-later AND CC0-1.0
 Group:		Graphical desktop/Other
 URL:		https://github.com/SmallTardigrade/glassosd
 Source0:	%{url}/archive/v%{version}/%{name}-%{version}.tar.gz
+Source100:	%{name}.rpmlintrc
 
 BuildSystem:	cmake
 BuildOption:	-DBUILD_TESTING:BOOL=%{?with_tests:ON}%{!?with_tests:OFF}
@@ -34,13 +35,12 @@ BuildRequires:	cmake(Qt6Test)
 BuildRequires:	%{_bindir}/dbus-run-session
 %endif
 
-# Loaded at runtime, rpm cannot see these
-# QtQuick, QtQuick.Layouts/Window/Effects QML modules
-Requires:	%{mklibname Qt6QmlCore}
-# Wayland platform plugin (libqwayland.so)
-Requires:	%{mklibname Qt6WaylandClient}
-# All icons are SVG; without this plugin they render blank
-Requires:	%{mklibname Qt6Svg}
+# Plugins loaded at runtime, rpm cannot see them
+# Wayland platform plugin
+Requires:	%{_libdir}/qt6/plugins/platforms/libqwayland.so
+# All icons are SVG; without these plugins they render blank
+Requires:	%{_libdir}/qt6/plugins/imageformats/libqsvg.so
+Requires:	%{_libdir}/qt6/plugins/iconengines/libqsvgicon.so
 # wayland-shell-integration layer-shell plugin
 Requires:	layer-shell-qt
 Requires:	kf6-breeze-icons
