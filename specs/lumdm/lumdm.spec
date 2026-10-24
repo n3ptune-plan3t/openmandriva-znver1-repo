@@ -1,7 +1,7 @@
 %{!?_unitdir:%global _unitdir %{_prefix}/lib/systemd/system}
 
 Name:		lumdm
-Version:	0.1.0
+Version:	0.1.1
 Release:	1
 Summary:	Tiny, themeable TTY display manager for X11 and Wayland sessions
 License:	MIT
