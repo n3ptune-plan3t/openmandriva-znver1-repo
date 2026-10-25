@@ -4,7 +4,7 @@
 
 Summary:	Linux kernel tracefs access library
 Name:		libtracefs
-Version:	1.8.3
+Version:	1.8.4
 Release:	1
 License:	LGPLv2.1
 Group:		System/Libraries
