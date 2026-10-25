@@ -4,7 +4,7 @@
 
 Summary:	Linux kernel trace event parsing library
 Name:		libtraceevent
-Version:	1.9.0
+Version:	1.9.1
 Release:	1
 License:	LGPLv2.1
 Group:		System/Libraries
