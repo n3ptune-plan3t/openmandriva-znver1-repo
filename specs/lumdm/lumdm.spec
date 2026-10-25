@@ -14,6 +14,7 @@ Requires:	systemd
 Recommends:	%{_bindir}/xinit
 Recommends:	%{_bindir}/Xorg
 Recommends:	%{_bindir}/numlockx
+Provides:	bundled(stb_truetype)
 
 %description
 lumdm is a minimal, resource-efficient login manager written in C23 for old
@@ -22,16 +23,17 @@ session with logind and launches any X11 or Wayland session found in
 /usr/share/xsessions and /usr/share/wayland-sessions.
 
 Features: themes (palette-programmed on the Linux VT, truecolor elsewhere),
-remembered user and session, configurable F1-F12 actions, optional NumLock
-default, and layered configuration: /etc/lumdm.conf for system defaults and
-~/.config/lumdm.conf for per-user overrides.
+ASCII wallpapers (festival, ocean, forest), optional system TrueType/OpenType
+console fonts, remembered user and session, configurable F1-F12 actions,
+optional NumLock default, and layered configuration: /etc/lumdm.conf for
+system defaults and ~/.config/lumdm.conf for per-user overrides.
 
 %prep
 %autosetup -p1
 sed -i 's|/usr/local/bin/lumdm|%{_bindir}/lumdm|' data/init/lumdm.service
 
 %build
-%{__cc} -std=c2x %{optflags} %{?build_ldflags} -o lumdm src/lumdm.c -lpam
+%{__cc} -std=c2x %{optflags} %{?build_ldflags} -o lumdm src/lumdm.c -lpam -lm
 
 %install
 install -Dm755 lumdm %{buildroot}%{_bindir}/lumdm
