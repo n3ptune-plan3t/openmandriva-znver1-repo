@@ -1,7 +1,7 @@
 %define module validators
 
 Name:		python-validators
-Version:	0.35.0
+Version:	0.36.0
 Release:	1
 Summary:	Python Data Validation for Humans
 Group:		Development/Python
