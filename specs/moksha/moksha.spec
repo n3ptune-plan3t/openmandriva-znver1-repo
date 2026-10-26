@@ -18,6 +18,8 @@ Patch1:         moksha-tpgest-native-gestures.patch
 Patch2:         moksha-middleclick-titlebar-close.patch
 # 4. monocle tabbed/stacked layout + Tasks order sync (needs Patch1)
 # Patch3:         moksha-monocle-layout.patch
+# 5. reservers space for shelves if needed
+Patch3:         moksha-shelf-exclusive-space.patch
 
 BuildSystem:    autotools
 BuildOption:    --sysconfdir=%{_sysconfdir}
