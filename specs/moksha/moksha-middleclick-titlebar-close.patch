@@ -1,65 +1,36 @@
 diff --git a/config/bodhi/e.src b/config/bodhi/e.src
-index a5e80fd..6762ac4 100644
+index ab934bda1..230e2c8a6 100644
 --- a/config/bodhi/e.src
 +++ b/config/bodhi/e.src
-@@ -851,12 +851,11 @@ group "E_Config" struct {
-         }
-         group "E_Config_Binding_Signal" struct {
-             value "context" int: 2;
+@@ -854 +854 @@ group "E_Config" struct {
 -            value "signal" string: "mouse,down,2";
 +            value "signal" string: "mouse,clicked,2";
-             value "source" string: "e.event.titlebar";
-             value "modifiers" int: 0;
-             value "any_mod" uchar: 1;
+@@ -858,2 +858 @@ group "E_Config" struct {
 -            value "action" string: "window_shaded_toggle";
 -            value "params" string: "up";
 +            value "action" string: "window_close";
-         }
-         group "E_Config_Binding_Signal" struct {
-             value "context" int: 2;
-@@ -1950,7 +1949,7 @@ group "E_Config" struct {
-             value "priority" int: -1000;
-         }
-     }
+@@ -1959 +1958 @@ group "E_Config" struct {
 -    value "config_version" int: 1000023;
 +    value "config_version" int: 1000024;
-     value "show_splash" int: 1;
-     value "init_default_theme" string: "/usr/share/enlightenment/data/themes/MokshaGreen.edj";
-     value "desktop_default_name" string: "%i-%i";
 diff --git a/config/default/e.src b/config/default/e.src
-index 4c94243..c095de6 100644
+index 4c94243c2..c095de697 100644
 --- a/config/default/e.src
 +++ b/config/default/e.src
-@@ -1,5 +1,5 @@
- group "E_Config" struct {
+@@ -2 +2 @@ group "E_Config" struct {
 -  value "config_version" int: 1000023;
 +  value "config_version" int: 1000024;
-   value "show_splash" int: 0;
-   value "init_default_theme" string: "default.edj";
-   value "desktop_default_name" string: "%i-%i";
-@@ -60,12 +60,11 @@ group "E_Config" struct {
-   group "signal_bindings" list {
-     group "E_Config_Binding_Signal" struct {
-       value "context" int: 2;
+@@ -63 +63 @@ group "E_Config" struct {
 -      value "signal" string: "mouse,down,2";
 +      value "signal" string: "mouse,clicked,2";
-       value "source" string: "e.event.titlebar";
-       value "modifiers" int: 0;
-       value "any_mod" uchar: 1;
+@@ -67,2 +67 @@ group "E_Config" struct {
 -      value "action" string: "window_shaded_toggle";
 -      value "params" string: "up";
 +      value "action" string: "window_close";
-     }
-   }
-   group "signal_bindings" list {
 diff --git a/src/bin/e_config.c b/src/bin/e_config.c
-index 5286876..1f9ea40 100644
+index 5286876b5..1f9ea407c 100644
 --- a/src/bin/e_config.c
 +++ b/src/bin/e_config.c
-@@ -1409,6 +1409,49 @@ while (!e_config)
-                e_config->scale.set_xapp_dpi = 1;
-                e_config_save_queue();
-             }
+@@ -1411,0 +1412,43 @@ while (!e_config)
 +          CONFIG_VERSION_CHECK(24)
 +            {
 +               Eina_List *l;
@@ -103,19 +74,10 @@ index 5286876..1f9ea40 100644
 +                 }
 +               e_config_save_queue();
 +            }
-      }
- 
-      e_config->config_version = E_CONFIG_FILE_VERSION;
 diff --git a/src/bin/e_config.h b/src/bin/e_config.h
-index 69528aa..5c803fb 100644
+index 69528aaff..5c803fbe2 100644
 --- a/src/bin/e_config.h
 +++ b/src/bin/e_config.h
-@@ -38,7 +38,7 @@ typedef struct _E_Event_Config_Icon_Theme   E_Event_Config_Icon_Theme;
- /* increment this whenever a new set of config values are added but the users
-  * config doesn't need to be wiped - simply new values need to be put in
-  */
+@@ -41 +41 @@ typedef struct _E_Event_Config_Icon_Theme   E_Event_Config_Icon_Theme;
 -#define E_CONFIG_FILE_GENERATION 23
 +#define E_CONFIG_FILE_GENERATION 24
- #define E_CONFIG_FILE_VERSION    ((E_CONFIG_FILE_EPOCH * 1000000) + E_CONFIG_FILE_GENERATION)
- 
- struct _E_Config
