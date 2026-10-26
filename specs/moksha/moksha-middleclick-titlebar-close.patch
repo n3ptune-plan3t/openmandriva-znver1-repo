@@ -2,35 +2,48 @@ diff --git a/config/bodhi/e.src b/config/bodhi/e.src
 index ab934bda1..230e2c8a6 100644
 --- a/config/bodhi/e.src
 +++ b/config/bodhi/e.src
-@@ -854 +854 @@ group "E_Config" struct {
+@@ -853,3 +853,3 @@ group "E_Config" struct {
+             value "context" int: 2;
 -            value "signal" string: "mouse,down,2";
 +            value "signal" string: "mouse,clicked,2";
-@@ -858,2 +858 @@ group "E_Config" struct {
+             value "source" string: "e.event.titlebar";
+@@ -857,4 +857,3 @@ group "E_Config" struct {
+             value "any_mod" uchar: 1;
 -            value "action" string: "window_shaded_toggle";
 -            value "params" string: "up";
 +            value "action" string: "window_close";
-@@ -1959 +1958 @@ group "E_Config" struct {
+         }
+@@ -1958,3 +1957,3 @@ group "E_Config" struct {
+     }
 -    value "config_version" int: 1000023;
 +    value "config_version" int: 1000024;
+     value "show_splash" int: 1;
 diff --git a/config/default/e.src b/config/default/e.src
 index 4c94243c2..c095de697 100644
 --- a/config/default/e.src
 +++ b/config/default/e.src
-@@ -2 +2 @@ group "E_Config" struct {
+@@ -1,3 +1,3 @@
+ group "E_Config" struct {
 -  value "config_version" int: 1000023;
 +  value "config_version" int: 1000024;
-@@ -63 +63 @@ group "E_Config" struct {
+   value "show_splash" int: 0;
+@@ -62,3 +62,3 @@ group "E_Config" struct {
+       value "context" int: 2;
 -      value "signal" string: "mouse,down,2";
 +      value "signal" string: "mouse,clicked,2";
-@@ -67,2 +67 @@ group "E_Config" struct {
+       value "source" string: "e.event.titlebar";
+@@ -66,4 +66,3 @@ group "E_Config" struct {
+       value "any_mod" uchar: 1;
 -      value "action" string: "window_shaded_toggle";
 -      value "params" string: "up";
 +      value "action" string: "window_close";
+     }
 diff --git a/src/bin/e_config.c b/src/bin/e_config.c
 index 5286876b5..1f9ea407c 100644
 --- a/src/bin/e_config.c
 +++ b/src/bin/e_config.c
-@@ -1411,0 +1412,43 @@ while (!e_config)
+@@ -1411,2 +1411,45 @@ while (!e_config)
+             }
 +          CONFIG_VERSION_CHECK(24)
 +            {
 +               Eina_List *l;
@@ -74,10 +87,13 @@ index 5286876b5..1f9ea407c 100644
 +                 }
 +               e_config_save_queue();
 +            }
+      }
 diff --git a/src/bin/e_config.h b/src/bin/e_config.h
 index 69528aaff..5c803fbe2 100644
 --- a/src/bin/e_config.h
 +++ b/src/bin/e_config.h
-@@ -41 +41 @@ typedef struct _E_Event_Config_Icon_Theme   E_Event_Config_Icon_Theme;
+@@ -40,3 +40,3 @@ typedef struct _E_Event_Config_Icon_Theme   E_Event_Config_Icon_Theme;
+  */
 -#define E_CONFIG_FILE_GENERATION 23
 +#define E_CONFIG_FILE_GENERATION 24
+ #define E_CONFIG_FILE_VERSION    ((E_CONFIG_FILE_EPOCH * 1000000) + E_CONFIG_FILE_GENERATION)
