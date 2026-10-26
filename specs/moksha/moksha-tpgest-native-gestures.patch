@@ -1,28 +1,19 @@
 diff --git a/config/bodhi/e.src b/config/bodhi/e.src
-index a5e80fd..ab934bd 100644
+index a5e80fdc5..ab934bda1 100644
 --- a/config/bodhi/e.src
 +++ b/config/bodhi/e.src
-@@ -1907,6 +1907,12 @@ group "E_Config" struct {
-             value "delayed" uchar: 1;
-             value "priority" int: 0;
-         }
-+        group "E_Config_Module" struct {
-+            value "name" string: "tpgest";
-+            value "enabled" uchar: 1;
+@@ -1906,0 +1907,6 @@ group "E_Config" struct {
 +            value "delayed" uchar: 1;
 +            value "priority" int: 0;
 +        }
-         group "E_Config_Module" struct {
-             value "name" string: "conf_window_remembers";
-             value "enabled" uchar: 1;
++        group "E_Config_Module" struct {
++            value "name" string: "tpgest";
++            value "enabled" uchar: 1;
 diff --git a/configure.ac b/configure.ac
-index e4cc1f5..fe4a7e4 100644
+index e4cc1f5d1..fe4a7e4a8 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -789,6 +789,14 @@ define([CHECK_MODULE_PLACES],
-   fi
- ])
- 
+@@ -791,0 +792,8 @@ define([CHECK_MODULE_PLACES],
 +define([CHECK_MODULE_TPGEST],
 +[
 +  AC_E_CHECK_PKG(TPGEST, [ libinput libudev ], [],
@@ -31,55 +22,28 @@ index e4cc1f5..fe4a7e4 100644
 +  AC_MSG_NOTICE([Install libinput-dev and libudev-dev to build the tpgest module])])
 +])
 +
- AC_SUBST(BATTERY_LDFLAGS)
- AM_CONDITIONAL([HAVE_OPENBSD], [test "x${have_openbsd}" = "xyes"])
- 
-@@ -923,6 +931,7 @@ AC_E_OPTIONAL_MODULE([xkbswitch], true)
- AC_E_OPTIONAL_MODULE([tiling], true)
- AC_E_OPTIONAL_MODULE([access], false)
- AC_E_OPTIONAL_MODULE([clipboard], true)
+@@ -925,0 +934 @@ AC_E_OPTIONAL_MODULE([clipboard], true)
 +AC_E_OPTIONAL_MODULE([tpgest], true, [CHECK_MODULE_TPGEST])
- AC_E_OPTIONAL_MODULE([places], true,[CHECK_MODULE_PLACES])
- AC_E_OPTIONAL_MODULE([classicmenu], true)
- AC_E_OPTIONAL_MODULE([separator], true)
-@@ -1052,6 +1061,7 @@ src/modules/shot/module.desktop
- src/modules/backlight/module.desktop
- src/modules/tasks/module.desktop
- src/modules/xkbswitch/module.desktop
+@@ -1054,0 +1064 @@ src/modules/xkbswitch/module.desktop
 +src/modules/tpgest/module.desktop
- src/modules/tiling/module.desktop
- src/modules/access/module.desktop
- src/modules/clipboard/module.desktop
 diff --git a/src/bin/e_module.c b/src/bin/e_module.c
-index 0cd3808..9227e3c 100644
+index 0cd3808d8..9227e3c42 100644
 --- a/src/bin/e_module.c
 +++ b/src/bin/e_module.c
-@@ -52,6 +52,7 @@
-         "tasks", \
-         "temperature", \
-         "tiling", \
+@@ -54,0 +55 @@
 +        "tpgest", \
-         "winlist", \
-         "wizard", \
-         "wl_drm", \
 diff --git a/src/modules/Makefile.am b/src/modules/Makefile.am
-index 23abff9..b50c641 100644
+index 23abff91f..b50c641e1 100644
 --- a/src/modules/Makefile.am
 +++ b/src/modules/Makefile.am
-@@ -187,6 +187,10 @@ if USE_MODULE_XKBSWITCH
- include Makefile_xkbswitch.am
- endif
- 
+@@ -189,0 +190,4 @@ endif
 +if USE_MODULE_TPGEST
 +include Makefile_tpgest.am
 +endif
 +
- if USE_MODULE_TILING
- include Makefile_tiling.am
- endif
 diff --git a/src/modules/Makefile_tpgest.am b/src/modules/Makefile_tpgest.am
 new file mode 100644
-index 0000000..4c1d968
+index 000000000..4c1d9688f
 --- /dev/null
 +++ b/src/modules/Makefile_tpgest.am
 @@ -0,0 +1,18 @@
@@ -103,7 +67,7 @@ index 0000000..4c1d968
 +install-tpgest: install-tpgestDATA install-tpgestpkgLTLIBRARIES
 diff --git a/src/modules/tpgest/e_mod_config.c b/src/modules/tpgest/e_mod_config.c
 new file mode 100644
-index 0000000..93ad78c
+index 000000000..93ad78cfb
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_config.c
 @@ -0,0 +1,319 @@
@@ -428,7 +392,7 @@ index 0000000..93ad78c
 +}
 diff --git a/src/modules/tpgest/e_mod_gesture.c b/src/modules/tpgest/e_mod_gesture.c
 new file mode 100644
-index 0000000..ddfa477
+index 000000000..ddfa4773e
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_gesture.c
 @@ -0,0 +1,215 @@
@@ -649,7 +613,7 @@ index 0000000..ddfa477
 +}
 diff --git a/src/modules/tpgest/e_mod_main.c b/src/modules/tpgest/e_mod_main.c
 new file mode 100644
-index 0000000..bacdfb6
+index 000000000..bacdfb6a0
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_main.c
 @@ -0,0 +1,150 @@
@@ -805,7 +769,7 @@ index 0000000..bacdfb6
 +}
 diff --git a/src/modules/tpgest/e_mod_main.h b/src/modules/tpgest/e_mod_main.h
 new file mode 100644
-index 0000000..70a664b
+index 000000000..70a664b0f
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_main.h
 @@ -0,0 +1,59 @@
@@ -870,7 +834,7 @@ index 0000000..70a664b
 +#endif
 diff --git a/src/modules/tpgest/module.desktop.in b/src/modules/tpgest/module.desktop.in
 new file mode 100644
-index 0000000..2fefa4e
+index 000000000..2fefa4e7a
 --- /dev/null
 +++ b/src/modules/tpgest/module.desktop.in
 @@ -0,0 +1,6 @@
