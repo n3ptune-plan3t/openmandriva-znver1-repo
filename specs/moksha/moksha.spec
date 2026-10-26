@@ -1,15 +1,23 @@
-%define commit 7c402e2331477aea08d702450acbd6504eee8193
+%define commit a556c48cf09f274db14e720c2648446e49d06206
 %define _disable_ld_no_undefined 1
 %define devname %{name}-devel
 
 Name:           moksha
 Version:        0.4.2
-Release:        2
+Release:        3
 Summary:        Moksha desktop, a fork of Enlightenment E17 (from Bodhi Linux)
 License:        BSD-2-Clause
 Group:          Graphical desktop/Other
 URL:            https://github.com/JeffHoogland/moksha
 Source0:        https://github.com/JeffHoogland/moksha/archive/%{commit}/%{name}-%{commit}.tar.gz
+# 1. scaling only affects native Moksha, never GTK/Qt (Xft.dpi / Xft/DPI)
+Patch0:         moksha-no-gtk-qt-scale.patch
+# 2. native touchpad gestures (tpgestd logic on libinput) + settings dialog
+Patch1:         moksha-tpgest-native-gestures.patch
+# 3. middle click on titlebar gracefully closes the window
+Patch2:         moksha-middleclick-titlebar-close.patch
+# 4. monocle tabbed/stacked layout + Tasks order sync (needs Patch1)
+# Patch3:         moksha-monocle-layout.patch
 
 BuildSystem:    autotools
 BuildOption:    --sysconfdir=%{_sysconfdir}
@@ -33,6 +41,8 @@ BuildRequires:  pkgconfig(xcb-shape)
 BuildRequires:  pkgconfig(xcb-keysyms)
 BuildRequires:  pkgconfig(dbus-1)
 BuildRequires:  pkgconfig(udisks2)
+BuildRequires:  pkgconfig(libinput)
+BuildRequires:  pkgconfig(libudev)
 BuildRequires:  pam-devel
 
 Requires:       efl
@@ -46,6 +56,11 @@ Conflicts:      enlightenment
 %description
 Moksha is a fork of the Enlightenment 17 window manager and desktop shell,
 maintained by Bodhi Linux. It is lightweight and highly configurable.
+
+This build adds native touchpad gestures (tpgest), the Monocle tabbed/stacked
+layout, graceful close on titlebar middle click, and scaling that does not
+touch GTK/Qt applications. Touchpad gestures need read access to
+/dev/input (membership of the "input" group).
 
 %package -n moksha-epulse
 Summary:        PulseAudio mixer for the Moksha desktop
@@ -64,7 +79,9 @@ Requires:       pkgconfig(efl)
 Headers and pkg-config file needed to build Moksha modules.
 
 %prep -a
-# Upstream tarball is a bare git snapshot: no configure script
+# Upstream tarball is a bare git snapshot: no configure script.
+# (Patches add modules and touch configure.ac / Makefile.am, so this
+# must run after they are applied.)
 autoreconf -fi
 
 %conf -p
