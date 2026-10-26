@@ -1,0 +1,54 @@
+diff --git a/src/bin/e_scale.c b/src/bin/e_scale.c
+index 6f9a606..8c85c83 100644
+--- a/src/bin/e_scale.c
++++ b/src/bin/e_scale.c
+@@ -43,11 +43,10 @@ e_scale_update(void)
+    e_hints_scale_update();
+    e_pointers_size_set(e_config->cursor_size);
+    e_xsettings_config_update();
++   /* Scaling only applies to native Moksha (elm/edje). GTK/Qt apps must not
++    * be touched: do not export a scaled Xft.dpi. */
+    if (e_config->scale.set_xapp_dpi)
+      {
+-        snprintf(buf, sizeof(buf), "%i",
+-                 (int)((double)e_config->scale.xapp_base_dpi * e_scale));
+-        ecore_x_resource_db_string_set("Xft.dpi", buf);
+         ecore_x_resource_db_string_set("Xft.hinting", "1");
+         ecore_x_resource_db_string_set("Xft.antialias", "1");
+         ecore_x_resource_db_string_set("Xft.autohint", "0");
+diff --git a/src/bin/e_xsettings.c b/src/bin/e_xsettings.c
+index d8618be..7ac7c89 100644
+--- a/src/bin/e_xsettings.c
++++ b/src/bin/e_xsettings.c
+@@ -649,10 +649,7 @@ _e_xsettings_font_set(void)
+ static void
+ _e_xsettings_dpi_set(void)
+ {
+-   if (e_config->scale.set_xapp_dpi)
+-     _e_xsettings_int_set(_setting_xft_dpi,
+-                          (double)e_config->scale.xapp_base_dpi * e_scale * 1024.0,
+-                          EINA_TRUE);
++   /* Do not publish a scaled Xft/DPI: GTK/Qt apps are not scaled by Moksha */
+    _e_xsettings_int_set(_setting_xft_antialias,
+                         1,
+                         EINA_TRUE);
+diff --git a/src/modules/conf_theme/e_int_config_scale.c b/src/modules/conf_theme/e_int_config_scale.c
+index a16fbf8..da2ed9b 100644
+--- a/src/modules/conf_theme/e_int_config_scale.c
++++ b/src/modules/conf_theme/e_int_config_scale.c
+@@ -324,15 +324,6 @@ _adv_create(E_Config_Dialog *cfd __UNUSED__, Evas *evas, E_Config_Dialog_Data *c
+    cfdata->gui.adv.custom_slider = ow;
+    e_widget_list_object_append(o, ow, 1, 1, 0.5);
+ 
+-   ow = e_widget_check_add(evas, _("Set Application DPI"),
+-                           &(cfdata->set_xapp_dpi));
+-   e_widget_list_object_append(o, ow, 1, 1, 0.5);
+-
+-   ow = e_widget_label_add(evas, _("Application Base DPI"));
+-   e_widget_list_object_append(o, ow, 1, 1, 0.5);
+-   ow = e_widget_slider_add(evas, 1, 0, _("%1.0f DPI"), 20, 1000, 1, 0,
+-                            NULL, &(cfdata->xapp_base_dpi), 100);
+-   e_widget_list_object_append(o, ow, 1, 1, 0.5);
+ 
+    e_widget_toolbook_page_append(otb, NULL, _("Policy"), o,
+                                  1, 0, 1, 0, 0.5, 0.0);
