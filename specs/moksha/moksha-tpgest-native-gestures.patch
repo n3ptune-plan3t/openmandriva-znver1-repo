@@ -159,10 +159,10 @@ index a34a059be..27a197398 100644
 +
 diff --git a/src/modules/tpgest/e_mod_config.c b/src/modules/tpgest/e_mod_config.c
 new file mode 100644
-index 000000000..28847f274
+index 000000000..e40269167
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_config.c
-@@ -0,0 +1,321 @@
+@@ -0,0 +1,403 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -217,32 +217,31 @@ index 000000000..28847f274
 +};
 +#define N_PRESETS ((int)(sizeof(_presets) / sizeof(_presets[0])))
 +#define PRESET_EXEC (N_PRESETS - 1)
-+/* index used for a binding that matches no preset: left untouched */
-+#define PRESET_KEEP N_PRESETS
 +
-+typedef struct
++#define PRESET_KEEP N_PRESETS   /* binding that matches no preset: left alone */
++
++typedef struct _Cb_Item Cb_Item;
++
++struct _Cb_Item
 +{
-+   int *dest;
-+   int  val;
-+} Sel_Item;
++   E_Config_Dialog_Data *cfdata;
++   int                   val;
++};
 +
 +struct _E_Config_Dialog_Data
 +{
-+   Sel_Item items[N_GESTURES][N_PRESETS + 1];
-+   int   enabled;
-+   int   swipe_threshold, pinch_threshold;
-+   int   sel[N_GESTURES];   /* chosen preset per gesture */
-+   char *cmd[N_GESTURES];
-+   char *custom[N_GESTURES];  /* label of the "unmatched" entry */
++   int          enabled;
++   int          swipe_threshold, pinch_threshold;
++   int          sel[N_GESTURES];      /* chosen preset per gesture */
++   char        *cmd[N_GESTURES];      /* command for "Run Command" */
++   char        *custom[N_GESTURES];   /* text of an unmatched binding */
++   int          row[N_GESTURES];      /* row of each gesture in the list */
++   int          cur;                  /* gesture being edited */
++   char        *cmd_edit;             /* entry buffer */
++   Evas_Object *o_gest, *o_act, *o_cmd;
++   Cb_Item      gitem[N_GESTURES];
++   Cb_Item      aitem[N_PRESETS + 1];
 +};
-+
-+static void
-+_cb_sel(void *data)
-+{
-+   Sel_Item *it = data;
-+
-+   *(it->dest) = it->val;
-+}
 +
 +static void        *_create_data(E_Config_Dialog *cfd);
 +static void         _free_data(E_Config_Dialog *cfd, E_Config_Dialog_Data *cfdata);
@@ -304,12 +303,16 @@ index 000000000..28847f274
 +        char buf[256];
 +
 +        cfdata->sel[i] = _preset_find(a, p);
-+        if (cfdata->sel[i] == PRESET_EXEC)
-+          cfdata->cmd[i] = strdup(p ? p : "");
-+        else
-+          cfdata->cmd[i] = strdup("");
++        cfdata->cmd[i] = strdup((cfdata->sel[i] == PRESET_EXEC) && p ? p : "");
 +        snprintf(buf, sizeof(buf), "%s %s", a ? a : "", p ? p : "");
 +        cfdata->custom[i] = strdup(buf);
++        cfdata->gitem[i].cfdata = cfdata;
++        cfdata->gitem[i].val = i;
++     }
++   for (i = 0; i <= N_PRESETS; i++)
++     {
++        cfdata->aitem[i].cfdata = cfdata;
++        cfdata->aitem[i].val = i;
 +     }
 +}
 +
@@ -333,56 +336,140 @@ index 000000000..28847f274
 +        free(cfdata->cmd[i]);
 +        free(cfdata->custom[i]);
 +     }
++   free(cfdata->cmd_edit);
 +   E_FREE(cfdata);
 +}
 +
-+static Evas_Object *
-+_gesture_page(Evas *evas, E_Config_Dialog_Data *cfdata, int fingers)
++/* "Swipe left  >  Focus Right Window" */
++static void
++_update_row(E_Config_Dialog_Data *cfdata, int i)
 +{
-+   Evas_Object *ot, *ol, *of;
-+   int i, row = 0;
++   char buf[512];
++   const char *act;
 +
-+   of = e_widget_framelist_add(evas, _("Gestures"), 0);
-+   ot = e_widget_table_add(evas, 0);
-+   for (i = 0; i < N_GESTURES; i++)
++   if (cfdata->sel[i] == PRESET_KEEP) act = cfdata->custom[i];
++   else if (cfdata->sel[i] == PRESET_EXEC)
 +     {
-+        int p;
-+
-+        if (_gestures[i].fingers != fingers) continue;
-+        ol = e_widget_label_add(evas, _(_gestures[i].label));
-+        e_widget_table_object_append(ot, ol, 0, row, 1, 1, 1, 1, 0, 0);
-+
-+        ol = e_widget_ilist_add(evas, 0, 0, NULL);
-+        e_widget_ilist_selector_set(ol, 1);
-+        for (p = 0; p <= N_PRESETS; p++)
-+          {
-+             const char *label;
-+
-+             if (p == PRESET_KEEP)
-+               {
-+                  if (cfdata->sel[i] != PRESET_KEEP) break;
-+                  label = cfdata->custom[i];
-+               }
-+             else label = _(_presets[p].label);
-+             cfdata->items[i][p].dest = &(cfdata->sel[i]);
-+             cfdata->items[i][p].val = p;
-+             e_widget_ilist_append(ol, NULL, label, _cb_sel,
-+                                   &(cfdata->items[i][p]), NULL);
-+          }
-+        e_widget_ilist_go(ol);
-+        e_widget_ilist_selected_set(ol, cfdata->sel[i]);
-+        e_widget_size_min_set(ol, 190, 28);
-+        e_widget_table_object_append(ot, ol, 1, row, 1, 1, 1, 1, 1, 0);
-+
-+        ol = e_widget_entry_add(evas, &(cfdata->cmd[i]), NULL, NULL, NULL);
-+        e_widget_size_min_set(ol, 150, 28);
-+        e_widget_table_object_append(ot, ol, 2, row, 1, 1, 1, 1, 1, 0);
-+        row++;
++        snprintf(buf, sizeof(buf), "%s %s", _("Run:"), cfdata->cmd[i]);
++        act = buf;
 +     }
-+   e_widget_framelist_object_append(of, ot);
++   else act = _(_presets[cfdata->sel[i]].label);
++   {
++      char line[768];
++
++      snprintf(line, sizeof(line), "%s   >   %s", _(_gestures[i].label), act);
++      e_widget_ilist_nth_label_set(cfdata->o_gest, cfdata->row[i], line);
++   }
++}
++
++static void
++_sync_cmd(E_Config_Dialog_Data *cfdata)
++{
++   int i = cfdata->cur;
++
++   e_widget_disabled_set(cfdata->o_cmd, cfdata->sel[i] != PRESET_EXEC);
++}
++
++/* a gesture was picked on the left: show its action on the right */
++static void
++_cb_gesture(void *data)
++{
++   Cb_Item *it = data;
++   E_Config_Dialog_Data *cfdata = it->cfdata;
++
++   cfdata->cur = it->val;
++   e_widget_ilist_selected_set(cfdata->o_act, cfdata->sel[it->val]);
++   e_widget_entry_text_set(cfdata->o_cmd, cfdata->cmd[it->val]);
++   _sync_cmd(cfdata);
++}
++
++/* an action was picked on the right: assign it to the chosen gesture */
++static void
++_cb_action(void *data)
++{
++   Cb_Item *it = data;
++   E_Config_Dialog_Data *cfdata = it->cfdata;
++
++   cfdata->sel[cfdata->cur] = it->val;
++   _update_row(cfdata, cfdata->cur);
++   _sync_cmd(cfdata);
++}
++
++static void
++_cb_cmd(void *data, void *data2 __UNUSED__)
++{
++   E_Config_Dialog_Data *cfdata = data;
++   int i = cfdata->cur;
++
++   free(cfdata->cmd[i]);
++   cfdata->cmd[i] = strdup(cfdata->cmd_edit ? cfdata->cmd_edit : "");
++   if (cfdata->sel[i] == PRESET_EXEC) _update_row(cfdata, i);
++}
++
++static Evas_Object *
++_gestures_page(Evas *evas, E_Config_Dialog_Data *cfdata)
++{
++   Evas_Object *ol, *ot, *of, *ow, *oc;
++   int i, p, row = 0, fingers = 0;
 +
 +   ol = e_widget_list_add(evas, 0, 0);
-+   e_widget_list_object_append(ol, of, 1, 1, 0.5);
++   ow = e_widget_check_add(evas, _("Enable touchpad gestures"), &(cfdata->enabled));
++   e_widget_list_object_append(ol, ow, 1, 0, 0.0);
++
++   ot = e_widget_table_add(evas, 0);
++
++   /* left: every gesture and what it currently does */
++   of = e_widget_framelist_add(evas, _("1. Choose a gesture"), 0);
++   cfdata->o_gest = e_widget_ilist_add(evas, 0, 0, NULL);
++   e_widget_ilist_freeze(cfdata->o_gest);
++   for (i = 0; i < N_GESTURES; i++)
++     {
++        if (_gestures[i].fingers != fingers)
++          {
++             fingers = _gestures[i].fingers;
++             e_widget_ilist_header_append(cfdata->o_gest, NULL,
++                                          (fingers == 3) ? _("3 Fingers") : _("4 Fingers"));
++             row++;
++          }
++        e_widget_ilist_append(cfdata->o_gest, NULL, "", _cb_gesture,
++                              &(cfdata->gitem[i]), NULL);
++        cfdata->row[i] = row++;
++     }
++   e_widget_ilist_go(cfdata->o_gest);
++   e_widget_ilist_thaw(cfdata->o_gest);
++   e_widget_size_min_set(cfdata->o_gest, 280, 300);
++   e_widget_framelist_object_append(of, cfdata->o_gest);
++   e_widget_table_object_append(ot, of, 0, 0, 1, 1, 1, 1, 1, 1);
++
++   /* right: the action for the selected gesture */
++   oc = e_widget_list_add(evas, 0, 0);
++   of = e_widget_framelist_add(evas, _("2. Choose its action"), 0);
++   cfdata->o_act = e_widget_ilist_add(evas, 0, 0, NULL);
++   e_widget_ilist_freeze(cfdata->o_act);
++   for (p = 0; p < N_PRESETS; p++)
++     e_widget_ilist_append(cfdata->o_act, NULL, _(_presets[p].label), _cb_action,
++                           &(cfdata->aitem[p]), NULL);
++   e_widget_ilist_append(cfdata->o_act, NULL, _("Custom (leave unchanged)"),
++                         _cb_action, &(cfdata->aitem[PRESET_KEEP]), NULL);
++   e_widget_ilist_go(cfdata->o_act);
++   e_widget_ilist_thaw(cfdata->o_act);
++   e_widget_size_min_set(cfdata->o_act, 230, 220);
++   e_widget_framelist_object_append(of, cfdata->o_act);
++   e_widget_list_object_append(oc, of, 1, 1, 0.5);
++
++   of = e_widget_framelist_add(evas, _("Command (for \"Run Command\")"), 0);
++   cfdata->o_cmd = e_widget_entry_add(evas, &(cfdata->cmd_edit), _cb_cmd,
++                                      cfdata, NULL);
++   e_widget_size_min_set(cfdata->o_cmd, 230, 28);
++   e_widget_framelist_object_append(of, cfdata->o_cmd);
++   e_widget_list_object_append(oc, of, 1, 0, 0.5);
++   e_widget_table_object_append(ot, oc, 1, 0, 1, 1, 1, 1, 1, 1);
++
++   e_widget_list_object_append(ol, ot, 1, 1, 0.5);
++
++   /* every row shows its current action, then start on the first gesture */
++   for (i = 0; i < N_GESTURES; i++) _update_row(cfdata, i);
++   e_widget_ilist_selected_set(cfdata->o_gest, cfdata->row[0]);
 +   return ol;
 +}
 +
@@ -393,31 +480,26 @@ index 000000000..28847f274
 +
 +   otb = e_widget_toolbook_add(evas, 24, 24);
 +
++   e_widget_toolbook_page_append(otb, NULL, _("Gestures"),
++                                 _gestures_page(evas, cfdata),
++                                 1, 1, 1, 1, 0.5, 0.0);
++
 +   ol = e_widget_list_add(evas, 0, 0);
-+   ow = e_widget_check_add(evas, _("Enable touchpad gestures"), &(cfdata->enabled));
-+   e_widget_list_object_append(ol, ow, 1, 1, 0.5);
-+   of = e_widget_framelist_add(evas, _("Sensitivity"), 0);
-+   ow = e_widget_label_add(evas, _("Swipe distance before it counts"));
++   of = e_widget_framelist_add(evas, _("Swipe"), 0);
++   ow = e_widget_label_add(evas, _("Distance a swipe must travel to count"));
 +   e_widget_framelist_object_append(of, ow);
 +   ow = e_widget_slider_add(evas, 1, 0, _("%1.0f units"), 5, 400, 1, 0,
-+                            NULL, &(cfdata->swipe_threshold), 150);
++                            NULL, &(cfdata->swipe_threshold), 200);
 +   e_widget_framelist_object_append(of, ow);
-+   ow = e_widget_label_add(evas, _("Pinch size change before it counts"));
++   e_widget_list_object_append(ol, of, 1, 0, 0.5);
++   of = e_widget_framelist_add(evas, _("Pinch"), 0);
++   ow = e_widget_label_add(evas, _("Size change a pinch must reach to count"));
 +   e_widget_framelist_object_append(of, ow);
 +   ow = e_widget_slider_add(evas, 1, 0, _("%1.0f %%"), 1, 200, 1, 0,
-+                            NULL, &(cfdata->pinch_threshold), 150);
++                            NULL, &(cfdata->pinch_threshold), 200);
 +   e_widget_framelist_object_append(of, ow);
-+   e_widget_list_object_append(ol, of, 1, 1, 0.5);
-+   ow = e_widget_label_add(evas, _("The command box is used by the 'Run Command' action."));
-+   e_widget_list_object_append(ol, ow, 1, 0, 0.5);
-+   e_widget_toolbook_page_append(otb, NULL, _("General"), ol,
-+                                 1, 0, 1, 0, 0.5, 0.0);
-+
-+   e_widget_toolbook_page_append(otb, NULL, _("3 Fingers"),
-+                                 _gesture_page(evas, cfdata, 3),
-+                                 1, 0, 1, 0, 0.5, 0.0);
-+   e_widget_toolbook_page_append(otb, NULL, _("4 Fingers"),
-+                                 _gesture_page(evas, cfdata, 4),
++   e_widget_list_object_append(ol, of, 1, 0, 0.5);
++   e_widget_toolbook_page_append(otb, NULL, _("Sensitivity"), ol,
 +                                 1, 0, 1, 0, 0.5, 0.0);
 +
 +   e_widget_toolbook_page_show(otb, 0);
@@ -707,10 +789,10 @@ index 000000000..ddfa4773e
 +}
 diff --git a/src/modules/tpgest/e_mod_main.c b/src/modules/tpgest/e_mod_main.c
 new file mode 100644
-index 000000000..44add2d95
+index 000000000..b982a71c9
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_main.c
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,182 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -760,6 +842,21 @@ index 000000000..44add2d95
 +   e_config_domain_save("module.tpgest", conf_edd, tpg_config);
 +}
 +
++#define TPG_CONFIG_VERSION 2
++
++static void
++_reset_bindings(void)
++{
++   Tpg_Binding *b;
++
++   EINA_LIST_FREE(tpg_config->bindings, b)
++     {
++        eina_stringshare_del(b->action);
++        eina_stringshare_del(b->params);
++        E_FREE(b);
++     }
++}
++
 +static void
 +_defaults(void)
 +{
@@ -771,8 +868,12 @@ index 000000000..44add2d95
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_RIGHT, "tasks_focus_prev", NULL);
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_UP,    "menu_show", "main");
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_DOWN,  "desk_deskshow_toggle", NULL);
-+   tpg_binding_set(TPG_SWIPE, 4, TPG_LEFT,  "desk_flip_by", "-1 0");
-+   tpg_binding_set(TPG_SWIPE, 4, TPG_RIGHT, "desk_flip_by", "1 0");
++   /* 4 fingers left/right: switch the desktop (focus moves with the view,
++    * the focused window is NOT carried along). Natural scrolling: the
++    * content follows the fingers, so swiping left reveals the desktop on
++    * the right. */
++   tpg_binding_set(TPG_SWIPE, 4, TPG_LEFT,  "desk_flip_by", "1 0");
++   tpg_binding_set(TPG_SWIPE, 4, TPG_RIGHT, "desk_flip_by", "-1 0");
 +   tpg_binding_set(TPG_SWIPE, 4, TPG_UP,    "window_maximized_toggle", NULL);
 +   tpg_binding_set(TPG_SWIPE, 4, TPG_DOWN,  "window_iconic_toggle", NULL);
 +}
@@ -796,6 +897,7 @@ index 000000000..44add2d95
 +#undef D
 +#define T Config
 +#define D conf_edd
++   E_CONFIG_VAL(D, T, version, INT);
 +   E_CONFIG_VAL(D, T, enabled, INT);
 +   E_CONFIG_VAL(D, T, swipe_threshold, INT);
 +   E_CONFIG_VAL(D, T, pinch_threshold, INT);
@@ -807,10 +909,20 @@ index 000000000..44add2d95
 +   if (!tpg_config)
 +     {
 +        tpg_config = E_NEW(Config, 1);
++        tpg_config->version = TPG_CONFIG_VERSION;
 +        tpg_config->enabled = 1;
 +        tpg_config->swipe_threshold = 40;
 +        tpg_config->pinch_threshold = 15;
 +        _defaults();
++     }
++   if (tpg_config->version < TPG_CONFIG_VERSION)
++     {
++        /* bindings saved by older versions no longer match the actions
++         * (e.g. 4 fingers used to move the window to another desktop) */
++        _reset_bindings();
++        _defaults();
++        tpg_config->version = TPG_CONFIG_VERSION;
++        tpg_config_save();
 +     }
 +   E_CONFIG_LIMIT(tpg_config->swipe_threshold, 5, 400);
 +   E_CONFIG_LIMIT(tpg_config->pinch_threshold, 1, 200);
@@ -865,10 +977,10 @@ index 000000000..44add2d95
 +}
 diff --git a/src/modules/tpgest/e_mod_main.h b/src/modules/tpgest/e_mod_main.h
 new file mode 100644
-index 000000000..70a664b0f
+index 000000000..666f262c7
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_main.h
-@@ -0,0 +1,59 @@
+@@ -0,0 +1,60 @@
 +#ifndef E_MOD_MAIN_H
 +#define E_MOD_MAIN_H
 +
@@ -901,6 +1013,7 @@ index 000000000..70a664b0f
 +
 +struct _Config
 +{
++   int        version;          /* bumped when the default bindings change */
 +   int        enabled;
 +   int        swipe_threshold;  /* accumulated unaccelerated px */
 +   int        pinch_threshold;  /* percent scale change */
