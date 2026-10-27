@@ -4,7 +4,7 @@
 #define tag         v%{basever}-%{prerel}.%{prerelnum}
 
 Name:           noctalia
-Version:        5.3.0
+Version:        5.4.0
 Release:        1
 Summary:        A sleek, customizable desktop shell crafted for Wayland.
 License:        MIT
