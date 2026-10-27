@@ -1,8 +1,8 @@
 diff --git a/src/bin/e_border.c b/src/bin/e_border.c
-index e35ae87a2..5b5fc2000 100644
+index b4cecf9a6..c6fa760ff 100644
 --- a/src/bin/e_border.c
 +++ b/src/bin/e_border.c
-@@ -1354,0 +1355,18 @@ _e_border_pending_move_resize_add(E_Border *bd,
+@@ -1352,0 +1353,18 @@ _e_border_pending_move_resize_add(E_Border *bd,
 +static void _e_border_move_resize_internal(E_Border *bd, int x, int y, int w, int h, Eina_Bool without_border, Eina_Bool move);
 +
 +/* keep windows out of shelves that exclusively reserve their space */
@@ -21,7 +21,7 @@ index e35ae87a2..5b5fc2000 100644
 +   return e_zone_shelf_exclusive_clamp(bd->zone, x, y, w, h);
 +}
 +
-@@ -1400,0 +1419,11 @@ _e_border_move_internal(E_Border *bd,
+@@ -1398,0 +1417,11 @@ _e_border_move_internal(E_Border *bd,
 +   {
 +      int cw = bd->w, ch = bd->h;
 +
@@ -33,7 +33,7 @@ index e35ae87a2..5b5fc2000 100644
 +           return;
 +        }
 +   }
-@@ -1592,0 +1622,12 @@ _e_border_move_resize_internal(E_Border *bd,
+@@ -1590,0 +1620,12 @@ _e_border_move_resize_internal(E_Border *bd,
 +   {
 +      int cx = move ? x : bd->x, cy = move ? y : bd->y;
 +
