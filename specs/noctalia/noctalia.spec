@@ -1,8 +1,3 @@
-#define basever     5.0.0
-#define prerel      beta
-#define prerelnum   10
-#define tag         v%{basever}-%{prerel}.%{prerelnum}
-
 Name:           noctalia
 Version:        5.4.0
 Release:        1
@@ -148,6 +143,7 @@ install -d -m 0755 %{buildroot}%{_datadir}/zsh/site-functions/
 %license LICENSE*
 %{_bindir}/noctalia
 %{_datadir}/applications/dev.noctalia.Noctalia.desktop
+%{_datadir}/applications/dev.noctalia.Noctalia.Annotator.desktop
 %{_datadir}/icons/hicolor/scalable/apps/noctalia.svg
 %{_datadir}/noctalia
 %{_datadir}/bash-completion/completions/noctalia
