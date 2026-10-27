@@ -4,7 +4,7 @@
 
 Name:           moksha
 Version:        0.4.2
-Release:        4
+Release:        5
 Summary:        Moksha desktop, a fork of Enlightenment E17 (from Bodhi Linux)
 License:        BSD-2-Clause
 Group:          Graphical desktop/Other
@@ -16,9 +16,7 @@ Patch0:         moksha-no-gtk-qt-scale.patch
 Patch1:         moksha-tpgest-native-gestures.patch
 # 3. middle click on titlebar gracefully closes the window
 Patch2:         moksha-middleclick-titlebar-close.patch
-# 4. monocle tabbed/stacked layout + Tasks order sync (needs Patch1)
-# Patch3:         moksha-monocle-layout.patch
-# 5. reservers space for shelves if needed
+# 4. reservers space for shelves if needed
 Patch3:         moksha-shelf-exclusive-space.patch
 
 BuildSystem:    autotools
