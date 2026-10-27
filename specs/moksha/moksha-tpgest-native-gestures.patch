@@ -159,10 +159,10 @@ index a34a059be..27a197398 100644
 +
 diff --git a/src/modules/tpgest/e_mod_config.c b/src/modules/tpgest/e_mod_config.c
 new file mode 100644
-index 000000000..e40269167
+index 000000000..cfda61693
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_config.c
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,412 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -172,11 +172,20 @@ index 000000000..e40269167
 +   const char *label;
 +} Gesture_Def;
 +
++/* how the action list is grouped (like Moksha's own binding dialogs) */
++enum { GRP_DESKTOP, GRP_TASKBAR, GRP_WINDOW, GRP_MENU, GRP_OTHER, GRP_LAST };
++
++static const char *_group_names[GRP_LAST] =
++{
++   N_("Desktop"), N_("Taskbar order"), N_("Window"), N_("Menus"), N_("Other")
++};
++
 +typedef struct
 +{
 +   const char *label;
 +   const char *action;
 +   const char *params;
++   int         group;
 +} Preset;
 +
 +static const Gesture_Def _gestures[] =
@@ -198,22 +207,22 @@ index 000000000..e40269167
 +
 +static const Preset _presets[] =
 +{
-+   { N_("None"),                           "",                        NULL },
-+   { N_("Previous Desktop"),               "desk_flip_by",            "-1 0" },
-+   { N_("Next Desktop"),                   "desk_flip_by",            "1 0" },
-+   { N_("Desktop Above"),                  "desk_flip_by",            "0 -1" },
-+   { N_("Desktop Below"),                  "desk_flip_by",            "0 1" },
-+   { N_("Show Desktop"),                   "desk_deskshow_toggle",    NULL },
-+   { N_("Main Menu"),                      "menu_show",               "main" },
-+   { N_("Window List"),                    "winlist",                 "next" },
-+   { N_("Maximize Window (toggle)"),       "window_maximized_toggle", NULL },
-+   { N_("Minimize Window"),                "window_iconic_toggle",    NULL },
-+   { N_("Close Window"),                   "window_close",            NULL },
-+   { N_("Move Window to Previous Desktop"), "window_desk_move_by",    "-1 0" },
-+   { N_("Move Window to Next Desktop"),    "window_desk_move_by",     "1 0" },
-+   { N_("Focus Right Window (taskbar order)"), "tasks_focus_next",    NULL },
-+   { N_("Focus Left Window (taskbar order)"),  "tasks_focus_prev",    NULL },
-+   { N_("Run Command"),                    "exec",                    NULL }
++   { N_("None"),                       "",                        NULL,   GRP_OTHER },
++   { N_("Previous Desktop"),           "desk_flip_by",            "-1 0", GRP_DESKTOP },
++   { N_("Next Desktop"),               "desk_flip_by",            "1 0",  GRP_DESKTOP },
++   { N_("Desktop Above"),              "desk_flip_by",            "0 -1", GRP_DESKTOP },
++   { N_("Desktop Below"),              "desk_flip_by",            "0 1",  GRP_DESKTOP },
++   { N_("Show Desktop"),               "desk_deskshow_toggle",    NULL,   GRP_DESKTOP },
++   { N_("Main Menu"),                  "menu_show",               "main", GRP_MENU },
++   { N_("Window List"),                "winlist",                 "next", GRP_MENU },
++   { N_("Toggle Maximize"),            "window_maximized_toggle", NULL,   GRP_WINDOW },
++   { N_("Minimize"),                   "window_iconic_toggle",    NULL,   GRP_WINDOW },
++   { N_("Close"),                      "window_close",            NULL,   GRP_WINDOW },
++   { N_("Send to Previous Desktop"),   "window_desk_move_by",     "-1 0", GRP_WINDOW },
++   { N_("Send to Next Desktop"),       "window_desk_move_by",     "1 0",  GRP_WINDOW },
++   { N_("Focus Right Window"),         "tasks_focus_next",        NULL,   GRP_TASKBAR },
++   { N_("Focus Left Window"),          "tasks_focus_prev",        NULL,   GRP_TASKBAR },
++   { N_("Run Command"),                "exec",                    NULL,   GRP_OTHER }
 +};
 +#define N_PRESETS ((int)(sizeof(_presets) / sizeof(_presets[0])))
 +#define PRESET_EXEC (N_PRESETS - 1)
@@ -236,6 +245,7 @@ index 000000000..e40269167
 +   char        *cmd[N_GESTURES];      /* command for "Run Command" */
 +   char        *custom[N_GESTURES];   /* text of an unmatched binding */
 +   int          row[N_GESTURES];      /* row of each gesture in the list */
++   int          arow[N_PRESETS + 1];  /* row of each action in its list */
 +   int          cur;                  /* gesture being edited */
 +   char        *cmd_edit;             /* entry buffer */
 +   Evas_Object *o_gest, *o_act, *o_cmd;
@@ -357,7 +367,7 @@ index 000000000..e40269167
 +   {
 +      char line[768];
 +
-+      snprintf(line, sizeof(line), "%s   >   %s", _(_gestures[i].label), act);
++      snprintf(line, sizeof(line), "%s  >  %s", _(_gestures[i].label), act);
 +      e_widget_ilist_nth_label_set(cfdata->o_gest, cfdata->row[i], line);
 +   }
 +}
@@ -378,7 +388,7 @@ index 000000000..e40269167
 +   E_Config_Dialog_Data *cfdata = it->cfdata;
 +
 +   cfdata->cur = it->val;
-+   e_widget_ilist_selected_set(cfdata->o_act, cfdata->sel[it->val]);
++   e_widget_ilist_selected_set(cfdata->o_act, cfdata->arow[cfdata->sel[it->val]]);
 +   e_widget_entry_text_set(cfdata->o_cmd, cfdata->cmd[it->val]);
 +   _sync_cmd(cfdata);
 +}
@@ -407,10 +417,10 @@ index 000000000..e40269167
 +}
 +
 +static Evas_Object *
-+_gestures_page(Evas *evas, E_Config_Dialog_Data *cfdata)
++_basic_create(E_Config_Dialog *cfd __UNUSED__, Evas *evas, E_Config_Dialog_Data *cfdata)
 +{
-+   Evas_Object *ol, *ot, *of, *ow, *oc;
-+   int i, p, row = 0, fingers = 0;
++   Evas_Object *ol, *ot, *of, *ow;
++   int i, p, g, row, fingers = 0;
 +
 +   ol = e_widget_list_add(evas, 0, 0);
 +   ow = e_widget_check_add(evas, _("Enable touchpad gestures"), &(cfdata->enabled));
@@ -418,10 +428,11 @@ index 000000000..e40269167
 +
 +   ot = e_widget_table_add(evas, 0);
 +
-+   /* left: every gesture and what it currently does */
-+   of = e_widget_framelist_add(evas, _("1. Choose a gesture"), 0);
++   /* left: the gestures, grouped by finger count */
++   of = e_widget_framelist_add(evas, _("Gestures"), 0);
 +   cfdata->o_gest = e_widget_ilist_add(evas, 0, 0, NULL);
 +   e_widget_ilist_freeze(cfdata->o_gest);
++   row = 0;
 +   for (i = 0; i < N_GESTURES; i++)
 +     {
 +        if (_gestures[i].fingers != fingers)
@@ -437,73 +448,71 @@ index 000000000..e40269167
 +     }
 +   e_widget_ilist_go(cfdata->o_gest);
 +   e_widget_ilist_thaw(cfdata->o_gest);
-+   e_widget_size_min_set(cfdata->o_gest, 280, 300);
++   e_widget_size_min_set(cfdata->o_gest, 420, 360);
 +   e_widget_framelist_object_append(of, cfdata->o_gest);
-+   e_widget_table_object_append(ot, of, 0, 0, 1, 1, 1, 1, 1, 1);
++   e_widget_table_object_append(ot, of, 0, 0, 1, 2, 1, 1, 1, 1);
 +
-+   /* right: the action for the selected gesture */
-+   oc = e_widget_list_add(evas, 0, 0);
-+   of = e_widget_framelist_add(evas, _("2. Choose its action"), 0);
++   /* right: the actions, grouped like Moksha's own binding dialogs */
++   of = e_widget_framelist_add(evas, _("Action"), 0);
 +   cfdata->o_act = e_widget_ilist_add(evas, 0, 0, NULL);
 +   e_widget_ilist_freeze(cfdata->o_act);
-+   for (p = 0; p < N_PRESETS; p++)
-+     e_widget_ilist_append(cfdata->o_act, NULL, _(_presets[p].label), _cb_action,
-+                           &(cfdata->aitem[p]), NULL);
++   row = 0;
++   for (g = 0; g < GRP_LAST; g++)
++     {
++        Eina_Bool head = EINA_FALSE;
++
++        for (p = 0; p < N_PRESETS; p++)
++          {
++             if (_presets[p].group != g) continue;
++             if (!head)
++               {
++                  e_widget_ilist_header_append(cfdata->o_act, NULL, _(_group_names[g]));
++                  row++;
++                  head = EINA_TRUE;
++               }
++             e_widget_ilist_append(cfdata->o_act, NULL, _(_presets[p].label),
++                                   _cb_action, &(cfdata->aitem[p]), NULL);
++             cfdata->arow[p] = row++;
++          }
++     }
 +   e_widget_ilist_append(cfdata->o_act, NULL, _("Custom (leave unchanged)"),
 +                         _cb_action, &(cfdata->aitem[PRESET_KEEP]), NULL);
++   cfdata->arow[PRESET_KEEP] = row++;
 +   e_widget_ilist_go(cfdata->o_act);
 +   e_widget_ilist_thaw(cfdata->o_act);
-+   e_widget_size_min_set(cfdata->o_act, 230, 220);
++   e_widget_size_min_set(cfdata->o_act, 420, 270);
 +   e_widget_framelist_object_append(of, cfdata->o_act);
-+   e_widget_list_object_append(oc, of, 1, 1, 0.5);
++   e_widget_table_object_append(ot, of, 1, 0, 1, 1, 1, 1, 1, 1);
 +
-+   of = e_widget_framelist_add(evas, _("Command (for \"Run Command\")"), 0);
++   of = e_widget_framelist_add(evas, _("Action Params"), 0);
 +   cfdata->o_cmd = e_widget_entry_add(evas, &(cfdata->cmd_edit), _cb_cmd,
 +                                      cfdata, NULL);
-+   e_widget_size_min_set(cfdata->o_cmd, 230, 28);
++   e_widget_size_min_set(cfdata->o_cmd, 420, 28);
 +   e_widget_framelist_object_append(of, cfdata->o_cmd);
-+   e_widget_list_object_append(oc, of, 1, 0, 0.5);
-+   e_widget_table_object_append(ot, oc, 1, 0, 1, 1, 1, 1, 1, 1);
++   ow = e_widget_label_add(evas, _("Command to run (only for \"Run Command\")"));
++   e_widget_framelist_object_append(of, ow);
++   e_widget_table_object_append(ot, of, 1, 1, 1, 1, 1, 0, 1, 0);
 +
 +   e_widget_list_object_append(ol, ot, 1, 1, 0.5);
++
++   /* sensitivity, side by side */
++   of = e_widget_framelist_add(evas, _("Sensitivity"), 0);
++   ow = e_widget_label_add(evas, _("Swipe distance"));
++   e_widget_framelist_object_append(of, ow);
++   ow = e_widget_slider_add(evas, 1, 0, _("%1.0f units"), 5, 400, 1, 0,
++                            NULL, &(cfdata->swipe_threshold), 300);
++   e_widget_framelist_object_append(of, ow);
++   ow = e_widget_label_add(evas, _("Pinch size change"));
++   e_widget_framelist_object_append(of, ow);
++   ow = e_widget_slider_add(evas, 1, 0, _("%1.0f %%"), 1, 200, 1, 0,
++                            NULL, &(cfdata->pinch_threshold), 300);
++   e_widget_framelist_object_append(of, ow);
++   e_widget_list_object_append(ol, of, 1, 0, 0.5);
 +
 +   /* every row shows its current action, then start on the first gesture */
 +   for (i = 0; i < N_GESTURES; i++) _update_row(cfdata, i);
 +   e_widget_ilist_selected_set(cfdata->o_gest, cfdata->row[0]);
 +   return ol;
-+}
-+
-+static Evas_Object *
-+_basic_create(E_Config_Dialog *cfd __UNUSED__, Evas *evas, E_Config_Dialog_Data *cfdata)
-+{
-+   Evas_Object *otb, *ol, *of, *ow;
-+
-+   otb = e_widget_toolbook_add(evas, 24, 24);
-+
-+   e_widget_toolbook_page_append(otb, NULL, _("Gestures"),
-+                                 _gestures_page(evas, cfdata),
-+                                 1, 1, 1, 1, 0.5, 0.0);
-+
-+   ol = e_widget_list_add(evas, 0, 0);
-+   of = e_widget_framelist_add(evas, _("Swipe"), 0);
-+   ow = e_widget_label_add(evas, _("Distance a swipe must travel to count"));
-+   e_widget_framelist_object_append(of, ow);
-+   ow = e_widget_slider_add(evas, 1, 0, _("%1.0f units"), 5, 400, 1, 0,
-+                            NULL, &(cfdata->swipe_threshold), 200);
-+   e_widget_framelist_object_append(of, ow);
-+   e_widget_list_object_append(ol, of, 1, 0, 0.5);
-+   of = e_widget_framelist_add(evas, _("Pinch"), 0);
-+   ow = e_widget_label_add(evas, _("Size change a pinch must reach to count"));
-+   e_widget_framelist_object_append(of, ow);
-+   ow = e_widget_slider_add(evas, 1, 0, _("%1.0f %%"), 1, 200, 1, 0,
-+                            NULL, &(cfdata->pinch_threshold), 200);
-+   e_widget_framelist_object_append(of, ow);
-+   e_widget_list_object_append(ol, of, 1, 0, 0.5);
-+   e_widget_toolbook_page_append(otb, NULL, _("Sensitivity"), ol,
-+                                 1, 0, 1, 0, 0.5, 0.0);
-+
-+   e_widget_toolbook_page_show(otb, 0);
-+   return otb;
 +}
 +
 +static int
