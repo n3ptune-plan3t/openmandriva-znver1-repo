@@ -124,6 +124,7 @@ mv third_party/wuffs/LICENSE-MIT                LICENSE-MIT.wuffs
 %meson	\
 	-Dtests=enabled \
 	-Dnative_optimizations=false \
+	-Db_lto=false \
 	--buildtype=release
 
 %meson_build	
