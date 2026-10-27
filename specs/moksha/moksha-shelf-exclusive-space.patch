@@ -59,7 +59,7 @@ index 5c803fbe2..2b9cdf34e 100644
 @@ -601,0 +602 @@ struct _E_Config_Shelf
 +   int           exclusive; /* reserve the shelf area: no window may overlap it */
 diff --git a/src/bin/e_int_shelf_config.c b/src/bin/e_int_shelf_config.c
-index c4e02b560..c12f4e0a7 100644
+index c4e02b560..cf2d37f6e 100644
 --- a/src/bin/e_int_shelf_config.c
 +++ b/src/bin/e_int_shelf_config.c
 @@ -11 +11 @@ struct _E_Config_Dialog_Data
@@ -77,11 +77,8 @@ index c4e02b560..c12f4e0a7 100644
 +   e_widget_list_object_append(ol, ow, 1, 1, 0.5);
 @@ -370,0 +378 @@ _basic_apply(E_Config_Dialog *cfd, E_Config_Dialog_Data *cfdata)
 +   cfdata->escfg->exclusive = cfdata->exclusive;
-@@ -432,0 +441,2 @@ _basic_apply(E_Config_Dialog *cfd, E_Config_Dialog_Data *cfdata)
-+   e_zone_shelf_exclusive_refit(cfdata->es->zone);
-+
 diff --git a/src/bin/e_zone.c b/src/bin/e_zone.c
-index 7f4f2d1a2..f1b31f841 100644
+index 7f4f2d1a2..f0f04afee 100644
 --- a/src/bin/e_zone.c
 +++ b/src/bin/e_zone.c
 @@ -1252,2 +1252,6 @@ _e_zone_useful_geometry_calc(E_Zone *zone)
@@ -99,7 +96,7 @@ index 7f4f2d1a2..f1b31f841 100644
 +                  if (shelf->cfg->autohide)
 +                    continue;
 +               }
-@@ -1324,0 +1330,120 @@ _e_zone_useful_geometry_calc(E_Zone *zone)
+@@ -1324,0 +1330,119 @@ _e_zone_useful_geometry_calc(E_Zone *zone)
 +static Eina_Bool
 +_e_zone_shelf_exclusive_active(E_Zone *zone, E_Shelf *shelf)
 +{
@@ -208,7 +205,6 @@ index 7f4f2d1a2..f1b31f841 100644
 +   Eina_List *l;
 +   E_Border *bd;
 +
-+   e_zone_useful_geometry_dirty(zone);
 +   EINA_LIST_FOREACH(e_border_client_list(), l, bd)
 +     {
 +        if (bd->zone != zone) continue;
@@ -220,6 +216,43 @@ index 7f4f2d1a2..f1b31f841 100644
 +     }
 +}
 +
+@@ -1361,0 +1486,17 @@ e_zone_useful_geometry_get(E_Zone *zone,
++static Ecore_Job *_exclusive_refit_job = NULL;
++
++static void
++_e_zone_exclusive_refit_job(void *data __UNUSED__)
++{
++   Eina_List *l, *ll, *lz;
++   E_Manager *man;
++   E_Container *con;
++   E_Zone *zone;
++
++   _exclusive_refit_job = NULL;
++   EINA_LIST_FOREACH(e_manager_list(), l, man)
++     EINA_LIST_FOREACH(man->containers, ll, con)
++       EINA_LIST_FOREACH(con->zones, lz, zone)
++         e_zone_shelf_exclusive_refit(zone);
++}
++
+@@ -1380,0 +1522,18 @@ e_zone_useful_geometry_dirty(E_Zone *zone)
++
++   /* A shelf was created, resized or reconfigured: windows that were placed
++    * before its final size was known (e.g. restored at login) must be pushed
++    * out of an exclusive shelf now, not only when next moved. Deferred so it
++    * never runs inside the shelf's own update. */
++   if (!_exclusive_refit_job)
++     {
++        Eina_List *sl, *shelves = e_shelf_list_all();
++        E_Shelf *sh;
++        Eina_Bool any = EINA_FALSE;
++
++        EINA_LIST_FOREACH(shelves, sl, sh)
++          if ((sh->zone == zone) && (sh->cfg) && (sh->cfg->exclusive))
++            any = EINA_TRUE;
++        eina_list_free(shelves);
++        if (any)
++          _exclusive_refit_job = ecore_job_add(_e_zone_exclusive_refit_job, NULL);
++     }
 diff --git a/src/bin/e_zone.h b/src/bin/e_zone.h
 index 9e8a5474a..d55c145aa 100644
 --- a/src/bin/e_zone.h
