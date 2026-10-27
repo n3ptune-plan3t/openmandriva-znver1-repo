@@ -65,12 +65,104 @@ index 000000000..4c1d9688f
 +.PHONY: tpgest install-tpgest
 +tpgest: $(tpgestpkg_LTLIBRARIES) $(tpgest_DATA)
 +install-tpgest: install-tpgestDATA install-tpgestpkgLTLIBRARIES
+diff --git a/src/modules/tasks/e_mod_main.c b/src/modules/tasks/e_mod_main.c
+index a34a059be..27a197398 100644
+--- a/src/modules/tasks/e_mod_main.c
++++ b/src/modules/tasks/e_mod_main.c
+@@ -60,0 +61,2 @@ struct _Tasks_Item
++static void         _tasks_act_next(E_Object *obj, const char *params);
++static void         _tasks_act_prev(E_Object *obj, const char *params);
+@@ -143,0 +146,19 @@ e_modapi_init(E_Module *m)
++   {
++      E_Action *act;
++
++      act = e_action_add("tasks_focus_next");
++      if (act)
++        {
++           act->func.go = _tasks_act_next;
++           e_action_predef_name_set(N_("Tasks"), N_("Focus Next Window (taskbar order)"),
++                                    "tasks_focus_next", NULL, NULL, 0);
++        }
++      act = e_action_add("tasks_focus_prev");
++      if (act)
++        {
++           act->func.go = _tasks_act_prev;
++           e_action_predef_name_set(N_("Tasks"), N_("Focus Previous Window (taskbar order)"),
++                                    "tasks_focus_prev", NULL, NULL, 0);
++        }
++   }
++
+@@ -206,0 +228,58 @@ e_modapi_init(E_Module *m)
++/* Actions used by touchpad gestures (tpgest) and key bindings: focus the
++ * window to the right/left of the focused one, in the order of the icons
++ * the Tasks gadget of the current screen shows on the shelf. */
++static void
++_tasks_focus_step(int dir)
++{
++   E_Zone *zone = e_util_zone_current_get(e_manager_current_get());
++   Eina_List *l, *vis = NULL;
++   Tasks *tasks, *use = NULL;
++   Tasks_Item *item;
++   E_Border *cur = e_border_focused_get(), *bd;
++   int n, idx = -1, i = 0;
++
++   if ((!tasks_config) || (!zone)) return;
++   EINA_LIST_FOREACH(tasks_config->tasks, l, tasks)
++     if ((tasks->zone == zone) && (tasks->items))
++       {
++          use = tasks;
++          break;
++       }
++   if (!use) return;
++
++   /* icons in shelf order; minimized windows are not woken up by a swipe */
++   EINA_LIST_FOREACH(use->items, l, item)
++     if ((item->border) && (!item->border->iconic))
++       vis = eina_list_append(vis, item->border);
++   n = eina_list_count(vis);
++   if (n == 0) return;
++
++   EINA_LIST_FOREACH(vis, l, bd)
++     {
++        if (bd == cur) idx = i;
++        i++;
++     }
++   if (idx < 0) idx = (dir > 0) ? -1 : n;
++   idx = (((idx + dir) % n) + n) % n;
++   bd = eina_list_nth(vis, idx);
++   eina_list_free(vis);
++   if ((!bd) || (bd == cur)) return;
++
++   if ((!bd->sticky) && (use->config) && (use->config->show_all))
++     e_desk_show(bd->desk);
++   e_border_raise(bd);
++   e_border_focus_set(bd, 1, 1);
++}
++
++static void
++_tasks_act_next(E_Object *obj __UNUSED__, const char *params __UNUSED__)
++{
++   _tasks_focus_step(1);
++}
++
++static void
++_tasks_act_prev(E_Object *obj __UNUSED__, const char *params __UNUSED__)
++{
++   _tasks_focus_step(-1);
++}
++
+@@ -209,0 +289,5 @@ e_modapi_shutdown(E_Module *m __UNUSED__)
++   e_action_predef_name_del("Tasks", "Focus Next Window (taskbar order)");
++   e_action_predef_name_del("Tasks", "Focus Previous Window (taskbar order)");
++   e_action_del("tasks_focus_next");
++   e_action_del("tasks_focus_prev");
++
 diff --git a/src/modules/tpgest/e_mod_config.c b/src/modules/tpgest/e_mod_config.c
 new file mode 100644
-index 000000000..93ad78cfb
+index 000000000..28847f274
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_config.c
-@@ -0,0 +1,319 @@
+@@ -0,0 +1,321 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -119,6 +211,8 @@ index 000000000..93ad78cfb
 +   { N_("Close Window"),                   "window_close",            NULL },
 +   { N_("Move Window to Previous Desktop"), "window_desk_move_by",    "-1 0" },
 +   { N_("Move Window to Next Desktop"),    "window_desk_move_by",     "1 0" },
++   { N_("Focus Right Window (taskbar order)"), "tasks_focus_next",    NULL },
++   { N_("Focus Left Window (taskbar order)"),  "tasks_focus_prev",    NULL },
 +   { N_("Run Command"),                    "exec",                    NULL }
 +};
 +#define N_PRESETS ((int)(sizeof(_presets) / sizeof(_presets[0])))
@@ -613,10 +707,10 @@ index 000000000..ddfa4773e
 +}
 diff --git a/src/modules/tpgest/e_mod_main.c b/src/modules/tpgest/e_mod_main.c
 new file mode 100644
-index 000000000..bacdfb6a0
+index 000000000..44add2d95
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_main.c
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,152 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -671,12 +765,14 @@ index 000000000..bacdfb6a0
 +{
 +   /* Native equivalents of tpgestd's config.example. tpgestd shells out to
 +    * xdotool/wmctrl; here the same gestures call Moksha actions directly. */
-+   tpg_binding_set(TPG_SWIPE, 3, TPG_LEFT,  "desk_flip_by", "-1 0");
-+   tpg_binding_set(TPG_SWIPE, 3, TPG_RIGHT, "desk_flip_by", "1 0");
++   /* 3 fingers left/right: focus the window to the right/left of the
++    * focused one, following the icon order of the Tasks gadget */
++   tpg_binding_set(TPG_SWIPE, 3, TPG_LEFT,  "tasks_focus_next", NULL);
++   tpg_binding_set(TPG_SWIPE, 3, TPG_RIGHT, "tasks_focus_prev", NULL);
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_UP,    "menu_show", "main");
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_DOWN,  "desk_deskshow_toggle", NULL);
-+   tpg_binding_set(TPG_SWIPE, 4, TPG_LEFT,  "window_desk_move_by", "-1 0");
-+   tpg_binding_set(TPG_SWIPE, 4, TPG_RIGHT, "window_desk_move_by", "1 0");
++   tpg_binding_set(TPG_SWIPE, 4, TPG_LEFT,  "desk_flip_by", "-1 0");
++   tpg_binding_set(TPG_SWIPE, 4, TPG_RIGHT, "desk_flip_by", "1 0");
 +   tpg_binding_set(TPG_SWIPE, 4, TPG_UP,    "window_maximized_toggle", NULL);
 +   tpg_binding_set(TPG_SWIPE, 4, TPG_DOWN,  "window_iconic_toggle", NULL);
 +}
