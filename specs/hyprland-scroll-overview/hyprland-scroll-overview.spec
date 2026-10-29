@@ -37,6 +37,9 @@ against; rebuild this package whenever hyprland is updated.
 
 %prep
 %autosetup -n %{name}-%{commit} -p1
+# meson.build globs *.cpp recursively and would pick up files from ./build
+sed -i "s|'find', '.', '-name'|'find', '.', '-maxdepth', '1', '-name'|" meson.build
+grep -q -- "-maxdepth" meson.build
 
 %build -p
 export SCROLLOVERVIEW_BUILD_VERSION=%{shortcommit}
@@ -45,4 +48,4 @@ export CXXFLAGS="%{optflags} -I%{_includedir}/hyprland/"
 %files
 %license LICENSE
 %doc README.md
-%{_libdir}/hyprland/scrolloverview.so
+%{_libdir}/hyprland/libscrolloverview.so
