@@ -292,7 +292,6 @@ gpgcheck=0
 priority=1
 EOF
 
-    dnf clean metadata
     dnf makecache
 else
     echo "==> Personal repository is empty"
@@ -327,12 +326,14 @@ grep -E '^BuildRequires:' "$ABF/$PKG.spec" |
     tr ',' '\n' |
     sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//' |
     sed '/^$/d' |
-    sort -u |
-    while read -r req; do
-        echo
-        echo "==> $req"
-        dnf provides "$req" || true
-    done
+    sort -u > "$ABF/.buildreqs.txt"
+
+# One dnf invocation for all of them (was one per BuildRequires, each
+# paying dnf's startup + metadata load).
+if [ -s "$ABF/.buildreqs.txt" ]; then
+    xargs -d '\n' dnf provides < "$ABF/.buildreqs.txt" || true
+fi
+rm -f "$ABF/.buildreqs.txt"
 
 # ============================================================
 # Lint spec
@@ -635,8 +636,9 @@ find "$RPMDIR" \
     -exec cp {} "$ROOT/out/" \;
 
 # Previous personal repository
-cp "$LOCALREPO"/*.rpm \
-    "$ROOT/merged/" 2>/dev/null || true
+# (hardlink when possible; falls back to a copy across filesystems)
+cp -l "$LOCALREPO"/*.rpm "$ROOT/merged/" 2>/dev/null ||
+    cp "$LOCALREPO"/*.rpm "$ROOT/merged/" 2>/dev/null || true
 
 # Current build
 find "$RPMDIR" \
@@ -667,45 +669,26 @@ echo "============================================================"
 
 (
     cd "$ROOT/merged"
+    tab=$(printf '\t')
 
-    for rpm_file in *.rpm; do
-        [ -f "$rpm_file" ] || continue
+    # One rpm query per file (was one per file *per file*), then pick the
+    # newest version-release per package name in a single sort.
+    for f in *.rpm; do
+        [ -f "$f" ] || continue
+        rpm -qp --qf "%{NAME}${tab}%{EPOCHNUM}:%{VERSION}-%{RELEASE}${tab}$f\n" "$f"
+    done |
+        sort -t "$tab" -k1,1 -k2,2Vr |
+        awk -F '\t' '$1 == prev { print $3 "\t" newest; next } { prev = $1; newest = $3 }' \
+        > /tmp/superseded.txt || true
 
-        # Extract package name using RPM itself.
-        pkg_name=$(rpm -qp --qf '%{NAME}' "$rpm_file")
-
-        # Collect "version-release<TAB>filename" pairs for this package.
-        matches=$(
-            for candidate in *.rpm; do
-                [ -f "$candidate" ] || continue
-
-                candidate_name=$(rpm -qp --qf '%{NAME}' "$candidate")
-
-                if [ "$candidate_name" = "$pkg_name" ]; then
-                    vr=$(rpm -qp --qf '%{EPOCHNUM}:%{VERSION}-%{RELEASE}' "$candidate")
-                    printf '%s\t%s\n' "$vr" "$candidate"
-                fi
-            done
-        )
-
-        if [ -z "$matches" ]; then
-            continue
-        fi
-
-        # Sort by version-release (field 1) and take the newest filename.
-        newest=$(printf '%s\n' "$matches" | sort -t "$(printf '\t')" -k1,1V | tail -n1 | cut -f2)
-
-        printf '%s\n' "$matches" |
-        cut -f2 |
-        while read -r f; do
-            [ -n "$f" ] || continue
-            if [ "$f" != "$newest" ]; then
-                echo "==> Removing stale $f"
-                echo "    superseded by $newest"
-                rm -f -- "$f"
-            fi
-        done
-    done
+    # awk prints "<stale file>\t<newest file>" for every non-newest version.
+    while IFS="$tab" read -r old newer; do
+        [ -n "$old" ] || continue
+        echo "==> Removing stale $old"
+        echo "    superseded by $newer"
+        rm -f -- "$old"
+    done < /tmp/superseded.txt
+    rm -f /tmp/superseded.txt
 )
 
 # ============================================================
