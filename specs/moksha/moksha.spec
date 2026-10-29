@@ -4,7 +4,7 @@
 
 Name:           moksha
 Version:        0.4.2
-Release:        6
+Release:        7
 Summary:        Moksha desktop, a fork of Enlightenment E17 (from Bodhi Linux)
 License:        BSD-2-Clause
 Group:          Graphical desktop/Other
