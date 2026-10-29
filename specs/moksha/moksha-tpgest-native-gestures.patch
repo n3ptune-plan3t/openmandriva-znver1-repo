@@ -159,10 +159,10 @@ index a34a059be..27a197398 100644
 +
 diff --git a/src/modules/tpgest/e_mod_config.c b/src/modules/tpgest/e_mod_config.c
 new file mode 100644
-index 000000000..cfda61693
+index 000000000..afe3e6bae
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_config.c
-@@ -0,0 +1,412 @@
+@@ -0,0 +1,382 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -243,7 +243,6 @@ index 000000000..cfda61693
 +   int          swipe_threshold, pinch_threshold;
 +   int          sel[N_GESTURES];      /* chosen preset per gesture */
 +   char        *cmd[N_GESTURES];      /* command for "Run Command" */
-+   char        *custom[N_GESTURES];   /* text of an unmatched binding */
 +   int          row[N_GESTURES];      /* row of each gesture in the list */
 +   int          arow[N_PRESETS + 1];  /* row of each action in its list */
 +   int          cur;                  /* gesture being edited */
@@ -310,12 +309,9 @@ index 000000000..cfda61693
 +                                          _gestures[i].dir);
 +        const char *a = b ? b->action : NULL;
 +        const char *p = b ? b->params : NULL;
-+        char buf[256];
 +
 +        cfdata->sel[i] = _preset_find(a, p);
 +        cfdata->cmd[i] = strdup((cfdata->sel[i] == PRESET_EXEC) && p ? p : "");
-+        snprintf(buf, sizeof(buf), "%s %s", a ? a : "", p ? p : "");
-+        cfdata->custom[i] = strdup(buf);
 +        cfdata->gitem[i].cfdata = cfdata;
 +        cfdata->gitem[i].val = i;
 +     }
@@ -344,32 +340,9 @@ index 000000000..cfda61693
 +   for (i = 0; i < N_GESTURES; i++)
 +     {
 +        free(cfdata->cmd[i]);
-+        free(cfdata->custom[i]);
 +     }
 +   free(cfdata->cmd_edit);
 +   E_FREE(cfdata);
-+}
-+
-+/* "Swipe left  >  Focus Right Window" */
-+static void
-+_update_row(E_Config_Dialog_Data *cfdata, int i)
-+{
-+   char buf[512];
-+   const char *act;
-+
-+   if (cfdata->sel[i] == PRESET_KEEP) act = cfdata->custom[i];
-+   else if (cfdata->sel[i] == PRESET_EXEC)
-+     {
-+        snprintf(buf, sizeof(buf), "%s %s", _("Run:"), cfdata->cmd[i]);
-+        act = buf;
-+     }
-+   else act = _(_presets[cfdata->sel[i]].label);
-+   {
-+      char line[768];
-+
-+      snprintf(line, sizeof(line), "%s  >  %s", _(_gestures[i].label), act);
-+      e_widget_ilist_nth_label_set(cfdata->o_gest, cfdata->row[i], line);
-+   }
 +}
 +
 +static void
@@ -401,7 +374,6 @@ index 000000000..cfda61693
 +   E_Config_Dialog_Data *cfdata = it->cfdata;
 +
 +   cfdata->sel[cfdata->cur] = it->val;
-+   _update_row(cfdata, cfdata->cur);
 +   _sync_cmd(cfdata);
 +}
 +
@@ -413,7 +385,6 @@ index 000000000..cfda61693
 +
 +   free(cfdata->cmd[i]);
 +   cfdata->cmd[i] = strdup(cfdata->cmd_edit ? cfdata->cmd_edit : "");
-+   if (cfdata->sel[i] == PRESET_EXEC) _update_row(cfdata, i);
 +}
 +
 +static Evas_Object *
@@ -442,7 +413,7 @@ index 000000000..cfda61693
 +                                          (fingers == 3) ? _("3 Fingers") : _("4 Fingers"));
 +             row++;
 +          }
-+        e_widget_ilist_append(cfdata->o_gest, NULL, "", _cb_gesture,
++        e_widget_ilist_append(cfdata->o_gest, NULL, _(_gestures[i].label), _cb_gesture,
 +                              &(cfdata->gitem[i]), NULL);
 +        cfdata->row[i] = row++;
 +     }
@@ -510,7 +481,6 @@ index 000000000..cfda61693
 +   e_widget_list_object_append(ol, of, 1, 0, 0.5);
 +
 +   /* every row shows its current action, then start on the first gesture */
-+   for (i = 0; i < N_GESTURES; i++) _update_row(cfdata, i);
 +   e_widget_ilist_selected_set(cfdata->o_gest, cfdata->row[0]);
 +   return ol;
 +}
