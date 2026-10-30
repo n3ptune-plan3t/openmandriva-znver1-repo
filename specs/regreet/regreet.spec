@@ -3,13 +3,12 @@
 
 Name:           regreet
 Version:        0.2.0
-Release:        2
+Release:        1
 Summary:        Clean and customizable GTK4 greeter for greetd
 License:        GPL-3.0-or-later AND MIT AND CC0-1.0
 Group:          System/Base
 URL:            https://github.com/rharish101/ReGreet
 Source0:        %{url}/archive/%{version}/ReGreet-%{version}.tar.gz
-Source1:        %{name}-%{version}-vendor.tar.zst
 
 BuildRequires:  cargo
 BuildRequires:  rust
@@ -34,15 +33,7 @@ using Relm4. Includes an "Xinitrc" X11 session that logs in through startx
 and runs the user's ~/.xinitrc.
 
 %prep
-%autosetup -p1 -n ReGreet-%{version} -a1
-mkdir -p .cargo
-cat > .cargo/config.toml <<'EOF'
-[source.crates-io]
-replace-with = "vendored-sources"
-
-[source.vendored-sources]
-directory = "vendor"
-EOF
+%autosetup -p1 -n ReGreet-%{version}
 
 %build
 export GREETD_CONFIG_DIR=%{_sysconfdir}/greetd
@@ -52,7 +43,7 @@ export SESSION_DIRS=%{_datadir}/xsessions:%{_datadir}/wayland-sessions
 export X11_CMD_PREFIX="startx /usr/bin/env"
 export REBOOT_CMD="loginctl reboot"
 export POWEROFF_CMD="loginctl poweroff"
-cargo build --release --frozen --offline
+cargo build --release --locked
 
 %install
 install -Dm0755 target/release/regreet %{buildroot}%{_bindir}/regreet
