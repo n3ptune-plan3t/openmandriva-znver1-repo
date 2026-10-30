@@ -1,49 +1,54 @@
-%define debug_package %nil
+Name:           xwayland-satellite
+Version:        0.8.3
+Release:        1
+Summary:        Rootless Xwayland integration for Wayland compositors
+License:        MPL-2.0
+Group:          System/X11
+URL:            https://github.com/Supreeeme/xwayland-satellite
+Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
+# Generated fresh by the znver1 repo's build.sh (cargo vendor)
+Source1:        %{name}-%{version}-vendor.tar.xz
 
-Name:		xwayland-satellite
-Version:	0.8.3
-Release:	1
-Summary:	Rootless Xwayland integration for any Wayland compositor
-Group:		Graphical desktop/Other
-License:	MPL-2.0
-URL:		https://github.com/Supreeeme/xwayland-satellite
-Source0:	%{url}/archive/v%{version}/%{name}-%{version}.tar.gz
-
-BuildRequires:	rust-packaging
-BuildRequires:	clang
-BuildRequires:	lib64xcb-devel
-BuildRequires:	lib64xcb-cursor-devel
-
-Requires:	xwayland >= 23.1
-Requires:	lib64xcb1
-Requires:	lib64xcb-cursor0
+BuildRequires:  cargo
+BuildRequires:  rust >= 1.85
+BuildRequires:  clang
+BuildRequires:  pkgconfig(xcb)
+BuildRequires:  pkgconfig(xcb-cursor)
+Requires:       x11-server-xwayland
 
 %description
 xwayland-satellite grants rootless Xwayland integration to any Wayland
-compositor implementing xdg_wm_base and viewporter. This is particularly
-useful for compositors such as niri that do not implement rootless
-Xwayland support themselves.
+compositor implementing xdg_wm_base and viewporter. It is useful for
+compositors that do not implement rootless Xwayland themselves, such as niri.
 
 %prep
-%autosetup -a1
-rm -f rust-toolchain.toml
-%cargo_prep -v vendor
+%autosetup -a1 -p1
+mkdir -p .cargo
+cat > .cargo/config.toml <<EOF
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+EOF
+sed -i 's|^ExecStart=.*|ExecStart=%{_bindir}/%{name}|' resources/%{name}.service
 
 %build
-# No .git in the source tarball, so make vergen emit its idempotent
-# sentinel instead of trying (and failing) to run git. The code
-# explicitly handles VERGEN_IDEMPOTENT_OUTPUT in src/lib.rs.
-export VERGEN_IDEMPOTENT=true
-%cargo_build
+export CC=clang
+export CXX=clang++
+cargo build --release --offline --frozen -F systemd
 
 %install
-install -m 0755 -Dp target/release/%{name} %{buildroot}%{_bindir}/%{name}
+install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
+install -Dm644 resources/%{name}.service %{buildroot}%{_userunitdir}/%{name}.service
+install -Dm644 %{name}.man %{buildroot}%{_mandir}/man1/%{name}.1
+
+%check
+cargo test --release --offline --frozen --lib || :
 
 %files
 %license LICENSE
-%doc README.md ARCHITECTURE.md
+%doc README.md
 %{_bindir}/%{name}
-
-%changelog
-* Tue Sep 22 2026 Garrus - 0.8.2-1
-- Initial build for OpenMandriva Cooker
+%{_userunitdir}/%{name}.service
+%{_mandir}/man1/%{name}.1*
