@@ -547,10 +547,10 @@ index 000000000..afe3e6bae
 +}
 diff --git a/src/modules/tpgest/e_mod_gesture.c b/src/modules/tpgest/e_mod_gesture.c
 new file mode 100644
-index 000000000..ddfa4773e
+index 000000000..d3567c9b7
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_gesture.c
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,251 @@
 +/* Native touchpad gesture engine.
 + *
 + * Recognition logic is taken from tpgestd (n3ptune-plan3t/tpgestd): libinput
@@ -572,7 +572,18 @@ index 000000000..ddfa4773e
 +static struct libinput *_li = NULL;
 +static Ecore_Fd_Handler *_fdh = NULL;
 +
++/* Swipes are judged like a flick on a touch screen: where the fingers
++ * would end up if they kept going for a moment (distance + velocity *
++ * horizon), so a short quick flick counts and a slow drift does not.
++ * Everything is O(1) per libinput event; no timers or threads. */
++#define TPG_FLICK_HORIZON 0.12    /* s of "coasting" added to the distance */
++#define TPG_VEL_ALPHA     0.4     /* velocity smoothing (EMA) */
++#define TPG_MIN_TRAVEL    8.0     /* units: ignore touches that barely moved */
++#define TPG_STALE_US      100000  /* paused this long before lifting: no flick */
++
 +static double _acc_dx = 0.0, _acc_dy = 0.0, _scale = 1.0;
++static double _vx = 0.0, _vy = 0.0;   /* smoothed velocity, units/s */
++static uint64_t _last_us = 0;
 +static int _fingers = 0;
 +
 +static int
@@ -615,30 +626,55 @@ index 000000000..ddfa4773e
 +{
 +   struct libinput_event_gesture *g = libinput_event_get_gesture_event(ev);
 +
++   uint64_t now = libinput_event_gesture_get_time_usec(g);
++
 +   if (t == LIBINPUT_EVENT_GESTURE_SWIPE_BEGIN)
 +     {
 +        _acc_dx = _acc_dy = 0.0;
++        _vx = _vy = 0.0;
++        _last_us = now;
 +        _fingers = libinput_event_gesture_get_finger_count(g);
 +     }
 +   else if (t == LIBINPUT_EVENT_GESTURE_SWIPE_UPDATE)
 +     {
-+        _acc_dx += libinput_event_gesture_get_dx_unaccelerated(g);
-+        _acc_dy += libinput_event_gesture_get_dy_unaccelerated(g);
++        double dx = libinput_event_gesture_get_dx_unaccelerated(g);
++        double dy = libinput_event_gesture_get_dy_unaccelerated(g);
++
++        _acc_dx += dx;
++        _acc_dy += dy;
++        if (now > _last_us)
++          {
++             double dt = (double)(now - _last_us) / 1000000.0;
++
++             if (dt > 0.0005)
++               {
++                  _vx += ((dx / dt) - _vx) * TPG_VEL_ALPHA;
++                  _vy += ((dy / dt) - _vy) * TPG_VEL_ALPHA;
++               }
++          }
++        _last_us = now;
 +     }
 +   else if (t == LIBINPUT_EVENT_GESTURE_SWIPE_END)
 +     {
 +        if (!libinput_event_gesture_get_cancelled(g) &&
 +            ((_fingers == 3) || (_fingers == 4)))
 +          {
-+             double adx = fabs(_acc_dx), ady = fabs(_acc_dy);
++             /* fingers that rested before lifting carry no momentum */
++             double vx = (now - _last_us > TPG_STALE_US) ? 0.0 : _vx;
++             double vy = (now - _last_us > TPG_STALE_US) ? 0.0 : _vy;
++             double px = _acc_dx + (vx * TPG_FLICK_HORIZON);
++             double py = _acc_dy + (vy * TPG_FLICK_HORIZON);
++             double apx = fabs(px), apy = fabs(py);
 +             double th = (double)tpg_config->swipe_threshold;
 +
-+             if ((adx > th) || (ady > th))
++             if (((fabs(_acc_dx) > TPG_MIN_TRAVEL) ||
++                  (fabs(_acc_dy) > TPG_MIN_TRAVEL)) &&
++                 ((apx > th) || (apy > th)))
 +               {
 +                  int dir;
 +
-+                  if (adx > ady) dir = (_acc_dx > 0) ? TPG_RIGHT : TPG_LEFT;
-+                  else dir = (_acc_dy > 0) ? TPG_DOWN : TPG_UP;
++                  if (apx > apy) dir = (px > 0) ? TPG_RIGHT : TPG_LEFT;
++                  else dir = (py > 0) ? TPG_DOWN : TPG_UP;
 +                  _dispatch(TPG_SWIPE, _fingers, dir);
 +               }
 +          }
