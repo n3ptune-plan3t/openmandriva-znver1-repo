@@ -4,7 +4,7 @@
 
 Name:           moksha
 Version:        0.4.2
-Release:        8
+Release:        9
 Summary:        Moksha desktop, a fork of Enlightenment E17 (from Bodhi Linux)
 License:        BSD-2-Clause
 Group:          Graphical desktop/Other
@@ -38,6 +38,7 @@ BuildRequires:  pkgconfig(eeze)
 BuildRequires:  pkgconfig(elementary)
 BuildRequires:  pkgconfig(emotion)
 BuildRequires:  pkgconfig(systemd)
+BuildRequires:  pkgconfig(libsystemd)
 BuildRequires:  pkgconfig(xcb)
 BuildRequires:  pkgconfig(xcb-shape)
 BuildRequires:  pkgconfig(xcb-keysyms)
