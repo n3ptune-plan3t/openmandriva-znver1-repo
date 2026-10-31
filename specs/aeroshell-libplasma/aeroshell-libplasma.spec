@@ -101,4 +101,3 @@ stock libplasma packages and provides the same sonames.
 %{_qtdir}/qml/org/kde
 %{_qtdir}/plugins/kf6/kirigami
 %{_qtdir}/plugins/kf6/packagestructure
-%{_qtdir}/metatypes/qt6plasma*_metatypes.json
