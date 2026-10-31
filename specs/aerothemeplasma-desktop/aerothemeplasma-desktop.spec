@@ -63,8 +63,6 @@ BuildRequires:  cmake(KWin)
 BuildRequires:  cmake(KDecoration3)
 BuildRequires:  cmake(LibNotificationManager)
 BuildRequires:  cmake(LibTaskManager)
-BuildRequires:  cmake(KirigamiAddons)
-BuildRequires:  cmake(PolkitQt6-1)
 BuildRequires:  pkgconfig(epoxy)
 BuildRequires:  pkgconfig(libdrm)
 BuildRequires:  pkgconfig(wayland-client)
@@ -74,8 +72,9 @@ BuildRequires:  pkgconfig(xcb-randr)
 BuildRequires:  pkgconfig(xcb-shm)
 BuildRequires:  pkgconfig(xcb-damage)
 BuildRequires:  pkgconfig(gmp)
+BuildRequires:  kirigami-addons
 BuildRequires:  plasma-wayland-protocols
-BuildRequires:  lib64plasma-workspace-devel
+BuildRequires:  %{_lib}plasma-workspace-devel
 BuildRequires:  desktop-file-utils
 
 Requires:       plasma-desktop
@@ -83,7 +82,7 @@ Requires:       plasma-workspace
 Requires:       kvantum
 Requires:       sddm
 Requires:       polkit-kde-agent-1
-Requires:       qml(org.kde.kirigamiaddons.formcard)
+Requires:       kirigami-addons
 Recommends:     aeroshell-libplasma
 Recommends:     aeroshell-workspace
 Recommends:     aeroshell-kwin-components
@@ -120,20 +119,20 @@ AeroThemePlasma.
 %build
 # Pass 1: Wayland session + all shell components
 cmake -S . -B build -G Ninja \
-	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
-	-DCMAKE_INSTALL_PREFIX=%{_prefix} \
-	-DCMAKE_INSTALL_LIBDIR=%{_lib} \
-	-DKDE_INSTALL_USE_QT_SYS_PATHS:BOOL=ON \
-	-DINSTALL_X11_COMPONENTS:BOOL=OFF \
-	-DKAUTH_ACTIONS_QML:BOOL=ON
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+    -DCMAKE_INSTALL_LIBDIR=%{_lib} \
+    -DKDE_INSTALL_USE_QT_SYS_PATHS:BOOL=ON \
+    -DINSTALL_X11_COMPONENTS:BOOL=OFF \
+    -DKAUTH_ACTIONS_QML:BOOL=ON
 cmake --build build
 
 # Pass 2: X11 session files only
 cmake -S . -B build-x11 -G Ninja \
-	-DCMAKE_BUILD_TYPE=RelWithDebInfo \
-	-DCMAKE_INSTALL_PREFIX=%{_prefix} \
-	-DCMAKE_INSTALL_LIBDIR=%{_lib} \
-	-DINSTALL_X11_COMPONENTS:BOOL=ON
+    -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+    -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+    -DCMAKE_INSTALL_LIBDIR=%{_lib} \
+    -DINSTALL_X11_COMPONENTS:BOOL=ON
 cmake --build build-x11
 
 %install
