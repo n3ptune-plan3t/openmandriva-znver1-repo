@@ -22,7 +22,7 @@ BuildRequires:  cmake
 BuildRequires:  make
 BuildRequires:  pkgconf
 BuildRequires:  gettext
-BuildRequires:  blueprint-compiler
+BuildRequires:  blueprint-compiler-devel
 BuildRequires:  desktop-file-utils
 BuildRequires:  pam-devel
 BuildRequires:  pkgconfig(gtk4) >= 4.22
