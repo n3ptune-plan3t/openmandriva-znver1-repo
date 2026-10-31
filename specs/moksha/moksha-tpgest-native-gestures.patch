@@ -1,49 +1,87 @@
 diff --git a/config/bodhi/e.src b/config/bodhi/e.src
-index a5e80fdc5..ab934bda1 100644
+index a5e80fd..ab934bd 100644
 --- a/config/bodhi/e.src
 +++ b/config/bodhi/e.src
-@@ -1906,0 +1907,6 @@ group "E_Config" struct {
-+            value "delayed" uchar: 1;
-+            value "priority" int: 0;
-+        }
+@@ -1907,6 +1907,12 @@ group "E_Config" struct {
+             value "delayed" uchar: 1;
+             value "priority" int: 0;
+         }
 +        group "E_Config_Module" struct {
 +            value "name" string: "tpgest";
 +            value "enabled" uchar: 1;
++            value "delayed" uchar: 1;
++            value "priority" int: 0;
++        }
+         group "E_Config_Module" struct {
+             value "name" string: "conf_window_remembers";
+             value "enabled" uchar: 1;
 diff --git a/configure.ac b/configure.ac
-index e4cc1f5d1..fe4a7e4a8 100644
+index e4cc1f5..c1a1faa 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -791,0 +792,8 @@ define([CHECK_MODULE_PLACES],
+@@ -789,6 +789,16 @@ define([CHECK_MODULE_PLACES],
+   fi
+ ])
+ 
 +define([CHECK_MODULE_TPGEST],
 +[
 +  AC_E_CHECK_PKG(TPGEST, [ libinput libudev ], [],
 +  [
 +  TPGEST=false
 +  AC_MSG_NOTICE([Install libinput-dev and libudev-dev to build the tpgest module])])
++  AC_E_CHECK_PKG(TPGEST_LOGIND, [ libsystemd ], [],
++  [AC_MSG_NOTICE([libsystemd not found: tpgest will not pause while another session is active])])
 +])
 +
-@@ -925,0 +934 @@ AC_E_OPTIONAL_MODULE([clipboard], true)
+ AC_SUBST(BATTERY_LDFLAGS)
+ AM_CONDITIONAL([HAVE_OPENBSD], [test "x${have_openbsd}" = "xyes"])
+ 
+@@ -923,6 +933,7 @@ AC_E_OPTIONAL_MODULE([xkbswitch], true)
+ AC_E_OPTIONAL_MODULE([tiling], true)
+ AC_E_OPTIONAL_MODULE([access], false)
+ AC_E_OPTIONAL_MODULE([clipboard], true)
 +AC_E_OPTIONAL_MODULE([tpgest], true, [CHECK_MODULE_TPGEST])
-@@ -1054,0 +1064 @@ src/modules/xkbswitch/module.desktop
+ AC_E_OPTIONAL_MODULE([places], true,[CHECK_MODULE_PLACES])
+ AC_E_OPTIONAL_MODULE([classicmenu], true)
+ AC_E_OPTIONAL_MODULE([separator], true)
+@@ -1052,6 +1063,7 @@ src/modules/shot/module.desktop
+ src/modules/backlight/module.desktop
+ src/modules/tasks/module.desktop
+ src/modules/xkbswitch/module.desktop
 +src/modules/tpgest/module.desktop
+ src/modules/tiling/module.desktop
+ src/modules/access/module.desktop
+ src/modules/clipboard/module.desktop
 diff --git a/src/bin/e_module.c b/src/bin/e_module.c
-index 0cd3808d8..9227e3c42 100644
+index 0cd3808..9227e3c 100644
 --- a/src/bin/e_module.c
 +++ b/src/bin/e_module.c
-@@ -54,0 +55 @@
+@@ -52,6 +52,7 @@
+         "tasks", \
+         "temperature", \
+         "tiling", \
 +        "tpgest", \
+         "winlist", \
+         "wizard", \
+         "wl_drm", \
 diff --git a/src/modules/Makefile.am b/src/modules/Makefile.am
-index 23abff91f..b50c641e1 100644
+index 23abff9..b50c641 100644
 --- a/src/modules/Makefile.am
 +++ b/src/modules/Makefile.am
-@@ -189,0 +190,4 @@ endif
+@@ -187,6 +187,10 @@ if USE_MODULE_XKBSWITCH
+ include Makefile_xkbswitch.am
+ endif
+ 
 +if USE_MODULE_TPGEST
 +include Makefile_tpgest.am
 +endif
 +
+ if USE_MODULE_TILING
+ include Makefile_tiling.am
+ endif
 diff --git a/src/modules/Makefile_tpgest.am b/src/modules/Makefile_tpgest.am
 new file mode 100644
-index 000000000..4c1d9688f
+index 0000000..883475b
 --- /dev/null
 +++ b/src/modules/Makefile_tpgest.am
 @@ -0,0 +1,18 @@
@@ -55,8 +93,8 @@ index 000000000..4c1d9688f
 +tpgestpkgdir = $(MDIR)/tpgest/$(MODULE_ARCH)
 +tpgestpkg_LTLIBRARIES = tpgest/module.la
 +
-+tpgest_module_la_CFLAGS = $(AM_CFLAGS) @TPGEST_CFLAGS@
-+tpgest_module_la_LIBADD = @TPGEST_LIBS@ -lm
++tpgest_module_la_CFLAGS = $(AM_CFLAGS) @TPGEST_CFLAGS@ @TPGEST_LOGIND_CFLAGS@
++tpgest_module_la_LIBADD = @TPGEST_LIBS@ @TPGEST_LOGIND_LIBS@ -lm
 +tpgest_module_la_SOURCES = tpgest/e_mod_main.c \
 +			   tpgest/e_mod_main.h \
 +			   tpgest/e_mod_config.c \
@@ -66,13 +104,22 @@ index 000000000..4c1d9688f
 +tpgest: $(tpgestpkg_LTLIBRARIES) $(tpgest_DATA)
 +install-tpgest: install-tpgestDATA install-tpgestpkgLTLIBRARIES
 diff --git a/src/modules/tasks/e_mod_main.c b/src/modules/tasks/e_mod_main.c
-index a34a059be..27a197398 100644
+index a34a059..c21e48c 100644
 --- a/src/modules/tasks/e_mod_main.c
 +++ b/src/modules/tasks/e_mod_main.c
-@@ -60,0 +61,2 @@ struct _Tasks_Item
+@@ -58,6 +58,8 @@ struct _Tasks_Item
+    } drag;
+ };
+ 
 +static void         _tasks_act_next(E_Object *obj, const char *params);
 +static void         _tasks_act_prev(E_Object *obj, const char *params);
-@@ -143,0 +146,19 @@ e_modapi_init(E_Module *m)
+ static Tasks       *_tasks_new(Evas *evas, E_Zone *zone, const char *id);
+ static void         _tasks_free(Tasks *tasks);
+ static void         _tasks_refill(Tasks *tasks);
+@@ -141,6 +143,25 @@ e_modapi_init(E_Module *m)
+ #define D conf_edd
+    E_CONFIG_LIST(D, T, items, conf_item_edd);
+ 
 +   {
 +      E_Action *act;
 +
@@ -92,10 +139,14 @@ index a34a059be..27a197398 100644
 +        }
 +   }
 +
-@@ -206,0 +228,58 @@ e_modapi_init(E_Module *m)
-+/* Actions used by touchpad gestures (tpgest) and key bindings: focus the
-+ * window to the right/left of the focused one, in the order of the icons
-+ * the Tasks gadget of the current screen shows on the shelf. */
+    tasks_config = e_config_domain_load("module.tasks", conf_edd);
+    if (!tasks_config)
+      {
+@@ -204,9 +225,70 @@ e_modapi_init(E_Module *m)
+    return m;
+ }
+ 
++/* Focus the next/previous window in the order of the Tasks gadget icons. */
 +static void
 +_tasks_focus_step(int dir)
 +{
@@ -115,7 +166,7 @@ index a34a059be..27a197398 100644
 +       }
 +   if (!use) return;
 +
-+   /* icons in shelf order; minimized windows are not woken up by a swipe */
++   /* minimized windows are skipped */
 +   EINA_LIST_FOREACH(use->items, l, item)
 +     if ((item->border) && (!item->border->iconic))
 +       vis = eina_list_append(vis, item->border);
@@ -151,18 +202,23 @@ index a34a059be..27a197398 100644
 +   _tasks_focus_step(-1);
 +}
 +
-@@ -209,0 +289,5 @@ e_modapi_shutdown(E_Module *m __UNUSED__)
+ EAPI int
+ e_modapi_shutdown(E_Module *m __UNUSED__)
+ {
 +   e_action_predef_name_del("Tasks", "Focus Next Window (taskbar order)");
 +   e_action_predef_name_del("Tasks", "Focus Previous Window (taskbar order)");
 +   e_action_del("tasks_focus_next");
 +   e_action_del("tasks_focus_prev");
 +
+    Ecore_Event_Handler *eh;
+    Tasks *tasks;
+    Config_Item *cfg;
 diff --git a/src/modules/tpgest/e_mod_config.c b/src/modules/tpgest/e_mod_config.c
 new file mode 100644
-index 000000000..afe3e6bae
+index 0000000..bde3045
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_config.c
-@@ -0,0 +1,382 @@
+@@ -0,0 +1,381 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -172,7 +228,7 @@ index 000000000..afe3e6bae
 +   const char *label;
 +} Gesture_Def;
 +
-+/* how the action list is grouped (like Moksha's own binding dialogs) */
++/* action list groups */
 +enum { GRP_DESKTOP, GRP_TASKBAR, GRP_WINDOW, GRP_MENU, GRP_OTHER, GRP_LAST };
 +
 +static const char *_group_names[GRP_LAST] =
@@ -241,7 +297,7 @@ index 000000000..afe3e6bae
 +{
 +   int          enabled;
 +   int          swipe_threshold, pinch_threshold;
-+   int          sel[N_GESTURES];      /* chosen preset per gesture */
++   int          sel[N_GESTURES];      /* preset per gesture */
 +   char        *cmd[N_GESTURES];      /* command for "Run Command" */
 +   int          row[N_GESTURES];      /* row of each gesture in the list */
 +   int          arow[N_PRESETS + 1];  /* row of each action in its list */
@@ -480,7 +536,6 @@ index 000000000..afe3e6bae
 +   e_widget_framelist_object_append(of, ow);
 +   e_widget_list_object_append(ol, of, 1, 0, 0.5);
 +
-+   /* every row shows its current action, then start on the first gesture */
 +   e_widget_ilist_selected_set(cfdata->o_gest, cfdata->row[0]);
 +   return ol;
 +}
@@ -547,18 +602,13 @@ index 000000000..afe3e6bae
 +}
 diff --git a/src/modules/tpgest/e_mod_gesture.c b/src/modules/tpgest/e_mod_gesture.c
 new file mode 100644
-index 000000000..d3567c9b7
+index 0000000..5a30be3
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_gesture.c
-@@ -0,0 +1,251 @@
-+/* Native touchpad gesture engine.
-+ *
-+ * Recognition logic is taken from tpgestd (n3ptune-plan3t/tpgestd): libinput
-+ * gesture events, unaccelerated swipe deltas, scale for pinch. Instead of
-+ * forking a shell command, the libinput fd is watched by Moksha's own main
-+ * loop (no thread, no timer, no separate process) and gestures call Moksha
-+ * actions directly.
-+ */
+@@ -0,0 +1,270 @@
++/* Touchpad gesture engine, derived from tpgestd (n3ptune-plan3t/tpgestd).
++ * The libinput fd is watched by the main loop and gestures call Moksha
++ * actions directly. */
 +#include "e.h"
 +#include "e_mod_main.h"
 +#include <libinput.h>
@@ -567,15 +617,17 @@ index 000000000..d3567c9b7
 +#include <unistd.h>
 +#include <errno.h>
 +#include <math.h>
++#ifdef HAVE_TPGEST_LOGIND
++# include <systemd/sd-login.h>
++#endif
 +
 +static struct udev *_udev = NULL;
 +static struct libinput *_li = NULL;
 +static Ecore_Fd_Handler *_fdh = NULL;
++static char *_sid = NULL;
 +
-+/* Swipes are judged like a flick on a touch screen: where the fingers
-+ * would end up if they kept going for a moment (distance + velocity *
-+ * horizon), so a short quick flick counts and a slow drift does not.
-+ * Everything is O(1) per libinput event; no timers or threads. */
++/* A swipe is judged like a flick: distance + velocity * horizon, so a short
++ * quick flick counts and a slow drift does not. */
 +#define TPG_FLICK_HORIZON 0.12    /* s of "coasting" added to the distance */
 +#define TPG_VEL_ALPHA     0.4     /* velocity smoothing (EMA) */
 +#define TPG_MIN_TRAVEL    8.0     /* units: ignore touches that barely moved */
@@ -605,20 +657,53 @@ index 000000000..d3567c9b7
 +   _close_restricted
 +};
 +
++/* Events come straight from /dev/input, so they keep arriving while another
++ * session (e.g. a Wayland compositor on another VT) is in front. Only act
++ * when our own login session is the active one. */
++static Eina_Bool
++_session_active(void)
++{
++#ifdef HAVE_TPGEST_LOGIND
++   if (_sid) return (sd_session_is_active(_sid) != 0);
++#endif
++   return EINA_TRUE;
++}
++
 +static void
 +_dispatch(int type, int fingers, int dir)
 +{
 +   Tpg_Binding *b;
 +   E_Action *act;
 +
++   if (!_session_active()) return;
 +   b = tpg_binding_find(type, fingers, dir);
 +   if ((!b) || (!b->action) || (!b->action[0])) return;
 +   act = e_action_find(b->action);
 +   if ((!act) || (!act->func.go)) return;
-+   /* zone object: zone actions use it, window actions fall back to the
-+    * focused window by themselves */
 +   act->func.go(E_OBJECT(e_util_zone_current_get(e_manager_current_get())),
 +                b->params);
++}
++
++/* Direction of a finished swipe, or -1 if it was not one. Travel past the
++ * threshold always counts. A short, quick flick also counts, but momentum
++ * only ever adds to the travel: it never cancels or reverses a swipe. */
++static int
++_swipe_direction(double dx, double dy, double vx, double vy, Eina_Bool fresh,
++                 double th)
++{
++   double ax = fabs(dx), ay = fabs(dy), px = dx, py = dy;
++
++   if (ax > ay) { if (ax > th) return (dx > 0) ? TPG_RIGHT : TPG_LEFT; }
++   else if (ay > th) return (dy > 0) ? TPG_DOWN : TPG_UP;
++
++   if ((!fresh) || ((ax <= TPG_MIN_TRAVEL) && (ay <= TPG_MIN_TRAVEL)))
++     return -1;
++   if (vx * dx > 0.0) px += vx * TPG_FLICK_HORIZON;
++   if (vy * dy > 0.0) py += vy * TPG_FLICK_HORIZON;
++   if ((fabs(px) > fabs(py)) && (fabs(px) > th))
++     return (px > 0) ? TPG_RIGHT : TPG_LEFT;
++   if (fabs(py) > th) return (py > 0) ? TPG_DOWN : TPG_UP;
++   return -1;
 +}
 +
 +static void
@@ -656,27 +741,13 @@ index 000000000..d3567c9b7
 +     }
 +   else if (t == LIBINPUT_EVENT_GESTURE_SWIPE_END)
 +     {
-+        if (!libinput_event_gesture_get_cancelled(g) &&
-+            ((_fingers == 3) || (_fingers == 4)))
++        if ((_fingers == 3) || (_fingers == 4))
 +          {
-+             /* fingers that rested before lifting carry no momentum */
-+             double vx = (now - _last_us > TPG_STALE_US) ? 0.0 : _vx;
-+             double vy = (now - _last_us > TPG_STALE_US) ? 0.0 : _vy;
-+             double px = _acc_dx + (vx * TPG_FLICK_HORIZON);
-+             double py = _acc_dy + (vy * TPG_FLICK_HORIZON);
-+             double apx = fabs(px), apy = fabs(py);
-+             double th = (double)tpg_config->swipe_threshold;
++             int dir = _swipe_direction(_acc_dx, _acc_dy, _vx, _vy,
++                                        (now - _last_us <= TPG_STALE_US),
++                                        (double)tpg_config->swipe_threshold);
 +
-+             if (((fabs(_acc_dx) > TPG_MIN_TRAVEL) ||
-+                  (fabs(_acc_dy) > TPG_MIN_TRAVEL)) &&
-+                 ((apx > th) || (apy > th)))
-+               {
-+                  int dir;
-+
-+                  if (apx > apy) dir = (px > 0) ? TPG_RIGHT : TPG_LEFT;
-+                  else dir = (py > 0) ? TPG_DOWN : TPG_UP;
-+                  _dispatch(TPG_SWIPE, _fingers, dir);
-+               }
++             if (dir >= 0) _dispatch(TPG_SWIPE, _fingers, dir);
 +          }
 +        _fingers = 0;
 +     }
@@ -698,8 +769,7 @@ index 000000000..d3567c9b7
 +     }
 +   else if (t == LIBINPUT_EVENT_GESTURE_PINCH_END)
 +     {
-+        if (!libinput_event_gesture_get_cancelled(g) &&
-+            ((_fingers == 3) || (_fingers == 4)))
++        if ((_fingers == 3) || (_fingers == 4))
 +          {
 +             double delta = _scale - 1.0;
 +
@@ -757,6 +827,8 @@ index 000000000..d3567c9b7
 +   if (_udev) udev_unref(_udev);
 +   _udev = NULL;
 +   _fingers = 0;
++   free(_sid);
++   _sid = NULL;
 +}
 +
 +Eina_Bool
@@ -767,13 +839,15 @@ index 000000000..d3567c9b7
 +
 +   if (_li) return EINA_TRUE;
 +
++#ifdef HAVE_TPGEST_LOGIND
++   if (sd_pid_get_session(getpid(), &_sid) < 0) _sid = NULL;
++#endif
 +   _udev = udev_new();
 +   if (!_udev) return EINA_FALSE;
 +   _li = libinput_udev_create_context(&_iface, NULL, _udev);
 +   if (!_li) goto fail;
 +   if (libinput_udev_assign_seat(_li, "seat0") != 0) goto fail;
 +
-+   /* count gesture capable devices (touchpads) that we could open */
 +   libinput_dispatch(_li);
 +   while ((ev = libinput_get_event(_li)))
 +     {
@@ -804,10 +878,10 @@ index 000000000..d3567c9b7
 +}
 diff --git a/src/modules/tpgest/e_mod_main.c b/src/modules/tpgest/e_mod_main.c
 new file mode 100644
-index 000000000..b982a71c9
+index 0000000..0d7adc4
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_main.c
-@@ -0,0 +1,182 @@
+@@ -0,0 +1,171 @@
 +#include "e.h"
 +#include "e_mod_main.h"
 +
@@ -875,18 +949,11 @@ index 000000000..b982a71c9
 +static void
 +_defaults(void)
 +{
-+   /* Native equivalents of tpgestd's config.example. tpgestd shells out to
-+    * xdotool/wmctrl; here the same gestures call Moksha actions directly. */
-+   /* 3 fingers left/right: focus the window to the right/left of the
-+    * focused one, following the icon order of the Tasks gadget */
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_LEFT,  "tasks_focus_next", NULL);
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_RIGHT, "tasks_focus_prev", NULL);
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_UP,    "menu_show", "main");
 +   tpg_binding_set(TPG_SWIPE, 3, TPG_DOWN,  "desk_deskshow_toggle", NULL);
-+   /* 4 fingers left/right: switch the desktop (focus moves with the view,
-+    * the focused window is NOT carried along). Natural scrolling: the
-+    * content follows the fingers, so swiping left reveals the desktop on
-+    * the right. */
++   /* natural scrolling: swiping left reveals the desktop on the right */
 +   tpg_binding_set(TPG_SWIPE, 4, TPG_LEFT,  "desk_flip_by", "1 0");
 +   tpg_binding_set(TPG_SWIPE, 4, TPG_RIGHT, "desk_flip_by", "-1 0");
 +   tpg_binding_set(TPG_SWIPE, 4, TPG_UP,    "window_maximized_toggle", NULL);
@@ -932,8 +999,6 @@ index 000000000..b982a71c9
 +     }
 +   if (tpg_config->version < TPG_CONFIG_VERSION)
 +     {
-+        /* bindings saved by older versions no longer match the actions
-+         * (e.g. 4 fingers used to move the window to another desktop) */
 +        _reset_bindings();
 +        _defaults();
 +        tpg_config->version = TPG_CONFIG_VERSION;
@@ -942,8 +1007,6 @@ index 000000000..b982a71c9
 +   E_CONFIG_LIMIT(tpg_config->swipe_threshold, 5, 400);
 +   E_CONFIG_LIMIT(tpg_config->pinch_threshold, 1, 200);
 +
-+   /* the "Input" category is created by conf_interaction; adding it here
-+    * is a no-op if it already exists. */
 +   e_configure_registry_category_add("keyboard_and_mouse", 40, _("Input"),
 +                                     NULL, "preferences-behavior");
 +   e_configure_registry_item_add("keyboard_and_mouse/touchpad_gestures", 60,
@@ -992,15 +1055,12 @@ index 000000000..b982a71c9
 +}
 diff --git a/src/modules/tpgest/e_mod_main.h b/src/modules/tpgest/e_mod_main.h
 new file mode 100644
-index 000000000..666f262c7
+index 0000000..acbeed2
 --- /dev/null
 +++ b/src/modules/tpgest/e_mod_main.h
-@@ -0,0 +1,60 @@
+@@ -0,0 +1,57 @@
 +#ifndef E_MOD_MAIN_H
 +#define E_MOD_MAIN_H
-+
-+/* Native touchpad gestures for Moksha.
-+ * Gesture recognition is derived from n3ptune-plan3t/tpgestd (libinput). */
 +
 +#define TPG_SWIPE 0
 +#define TPG_PINCH 1
@@ -1010,7 +1070,7 @@ index 000000000..666f262c7
 +#define TPG_DOWN  1
 +#define TPG_LEFT  2
 +#define TPG_RIGHT 3
-+/* pinch directions (share the numbering with up/down, as in tpgestd) */
++/* pinch directions */
 +#define TPG_IN    0
 +#define TPG_OUT   1
 +
@@ -1058,7 +1118,7 @@ index 000000000..666f262c7
 +#endif
 diff --git a/src/modules/tpgest/module.desktop.in b/src/modules/tpgest/module.desktop.in
 new file mode 100644
-index 000000000..2fefa4e7a
+index 0000000..2fefa4e
 --- /dev/null
 +++ b/src/modules/tpgest/module.desktop.in
 @@ -0,0 +1,6 @@
