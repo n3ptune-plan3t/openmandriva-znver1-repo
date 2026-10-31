@@ -147,7 +147,7 @@ DESTDIR=%{buildroot} cmake --install build-x11
 %{_libdir}/qt6/plugins/plasma/applets/io.gitgud.wackyideas.*.so
 %{_libdir}/qt6/plugins/kf6/kded/statusnotifierwatcher.so
 %{_libdir}/qt6/qml/io/gitgud/wackyideas
-%{_libexecdir}/kauth/ootbcursor_authhelper
+%{_libdir}/libexec/kf6/kauth/ootbcursor_authhelper
 %{_datadir}/dbus-1/system.d/io.gitgud.wackyideas.ootb.conf
 %{_datadir}/dbus-1/system-services/io.gitgud.wackyideas.ootb.service
 %{_datadir}/polkit-1/actions/io.gitgud.wackyideas.ootb.policy
