@@ -75,7 +75,7 @@ BuildRequires:  pkgconfig(xcb-shm)
 BuildRequires:  pkgconfig(xcb-damage)
 BuildRequires:  pkgconfig(gmp)
 BuildRequires:  plasma-wayland-protocols
-BuildRequires:  plasma-workspace-devel
+BuildRequires:  lib64plasma-workspace-devel
 BuildRequires:  desktop-file-utils
 
 Requires:       plasma-desktop
