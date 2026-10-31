@@ -2,30 +2,39 @@
 %global debug_package %{nil}
 
 Name:           regreet
-Version:        0.2.0
+Version:        0.5.0
 Release:        1
 Summary:        Clean and customizable GTK4 greeter for greetd
-License:        GPL-3.0-or-later AND MIT AND CC0-1.0
+License:        GPL-3.0-or-later AND MIT AND 0BSD
 Group:          System/Base
 URL:            https://github.com/rharish101/ReGreet
 Source0:        %{url}/archive/%{version}/ReGreet-%{version}.tar.gz
 
+# Rust 1.85+ (edition 2024)
 BuildRequires:  cargo
-BuildRequires:  rust
-BuildRequires:  pkgconfig(gtk4)
+BuildRequires:  rust >= 1.85
+BuildRequires:  pkgconfig(gtk4) >= 4.16
 BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(gdk-pixbuf-2.0)
 BuildRequires:  pkgconfig(pango)
 BuildRequires:  pkgconfig(cairo)
+BuildRequires:  pkgconfig(graphene-gobject-1.0)
+# glycin crate deps
+BuildRequires:  pkgconfig(libseccomp)
+BuildRequires:  pkgconfig(lcms2)
+BuildRequires:  pkgconfig(fontconfig)
 
 Requires:       greetd
 Requires:       accountsservice
 Requires:       dbus
+Requires:       glycin-loaders
 Requires:       /usr/bin/startx
 Requires:       /usr/bin/Xorg
 Requires:       /usr/bin/env
 Recommends:     cage
 Recommends:     adwaita-icon-theme
+# animated backgrounds / video
+Recommends:     gstreamer1.0-plugins-good
 
 %description
 A clean and customizable GTK4-based greeter for greetd, written in Rust
@@ -54,7 +63,7 @@ install -dm0755 %{buildroot}%{_localstatedir}/log/regreet
 
 # xinitrc session: startx runs this instead of xinitrc, which then execs ~/.xinitrc
 install -dm0755 %{buildroot}%{_bindir}
-cat > %{buildroot}%{_bindir}/regreet-xinitrc <<'EOF'
+cat > %{buildroot}%{_bindir}/regreet-xinitrc <<'EOS'
 #!/bin/sh
 if [ -f "$HOME/.xinitrc" ]; then
     exec sh "$HOME/.xinitrc"
@@ -63,20 +72,20 @@ elif [ -f /etc/X11/xinit/xinitrc ]; then
 fi
 echo "regreet-xinitrc: no ~/.xinitrc found" >&2
 exit 1
-EOF
+EOS
 chmod 0755 %{buildroot}%{_bindir}/regreet-xinitrc
 
 install -dm0755 %{buildroot}%{_datadir}/xsessions
-cat > %{buildroot}%{_datadir}/xsessions/xinitrc.desktop <<'EOF'
+cat > %{buildroot}%{_datadir}/xsessions/xinitrc.desktop <<'EOS'
 [Desktop Entry]
 Name=Xinitrc
 Comment=Start X11 using ~/.xinitrc
 Exec=regreet-xinitrc
 Type=Application
-EOF
+EOS
 
 %files
-%license LICENSE
+%license LICENSE LICENSES/
 %doc README.md
 %{_bindir}/regreet
 %{_bindir}/regreet-xinitrc
