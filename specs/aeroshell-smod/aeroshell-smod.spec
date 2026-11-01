@@ -29,6 +29,7 @@ BuildRequires:  cmake(KF6WindowSystem)
 BuildRequires:  cmake(KF6KCMUtils)
 BuildRequires:  cmake(KDecoration3)
 BuildRequires:  kwin-devel
+BuildRequires:  kwin
 BuildRequires:  pkgconfig(epoxy)
 BuildRequires:  pkgconfig(vulkan)
 BuildRequires:  cmake(VulkanHeaders)
