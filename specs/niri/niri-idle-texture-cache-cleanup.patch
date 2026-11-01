@@ -1,0 +1,61 @@
+From 7164c31c6149012ef5494b088549b1646b58ce04 Mon Sep 17 00:00:00 2001
+From: n <n@e>
+Date: Sun, 1 Nov 2026 17:39:29 +0000
+Subject: [PATCH] Clean up renderer texture cache on the fallback timer
+
+The GLES renderer only drops imports of released client dmabufs at the start
+of a frame. When little or nothing is drawn, dead imports keep the clients'
+video memory alive. Run the cleanup from the existing one-second timer.
+---
+ src/backend/mod.rs | 16 ++++++++++++++++
+ src/niri.rs        |  1 +
+ 2 files changed, 17 insertions(+)
+
+diff --git a/src/backend/mod.rs b/src/backend/mod.rs
+index 49fbc6b..613472f 100644
+--- a/src/backend/mod.rs
++++ b/src/backend/mod.rs
+@@ -5,6 +5,7 @@ use std::time::Duration;
+ use niri_config::{Config, ModKey};
+ use smithay::backend::allocator::dmabuf::Dmabuf;
+ use smithay::backend::renderer::gles::GlesRenderer;
++use smithay::backend::renderer::Renderer as _;
+ use smithay::output::Output;
+ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+ 
+@@ -83,6 +84,21 @@ impl Backend {
+         }
+     }
+ 
++    /// Drops renderer-side imports of client buffers that clients have already released.
++    ///
++    /// The renderer normally does this at the start of every frame, so while nothing is being
++    /// drawn (idle desktop, monitors off) released client buffers would stay imported and keep
++    /// their video memory alive.
++    pub fn cleanup_texture_cache(&mut self) {
++        let _span = tracy_client::span!("Backend::cleanup_texture_cache");
++
++        self.with_primary_renderer(|renderer| {
++            if let Err(err) = renderer.cleanup_texture_cache() {
++                warn!("error cleaning up renderer texture cache: {err:?}");
++            }
++        });
++    }
++
+     pub fn render(
+         &mut self,
+         niri: &mut Niri,
+diff --git a/src/niri.rs b/src/niri.rs
+index ec40e01..cd57e96 100644
+--- a/src/niri.rs
++++ b/src/niri.rs
+@@ -2426,6 +2426,7 @@ impl Niri {
+                 Timer::from_duration(Duration::from_secs(1)),
+                 |_, _, state| {
+                     state.niri.send_frame_callbacks_on_fallback_timer();
++                    state.backend.cleanup_texture_cache();
+                     TimeoutAction::ToDuration(Duration::from_secs(1))
+                 },
+             )
+-- 
+2.43.0
