@@ -1,38 +1,36 @@
-From d7329559010932bdd7193375758f6030fe8fa421 Mon Sep 17 00:00:00 2001
+From 7dc6d33fd77c538f0f9cf4b2e07c378648e5aa57 Mon Sep 17 00:00:00 2001
 From: niri-patch <patch@example.com>
-Date: Sun, 1 Nov 2026 06:44:59 +0000
+Date: Sun, 1 Nov 2026 15:15:55 +0000
 Subject: [PATCH] Add low-power-frame-callbacks debug option
 
 Stop the once-a-second frame callback heartbeat to invisible windows and
 throttle frame callbacks to unfocused windows in the overview, to reduce
 CPU and GPU usage on low-end hardware.
 ---
- docs/wiki/Configuration:-Debug-Options.md | 19 ++++++++++
+ docs/wiki/Configuration:-Debug-Options.md | 17 +++++++++
  niri-config/src/debug.rs                  |  4 +++
  niri-config/src/lib.rs                    |  1 +
  src/niri.rs                               | 42 ++++++++++++++++-------
- 4 files changed, 54 insertions(+), 12 deletions(-)
+ 4 files changed, 52 insertions(+), 12 deletions(-)
 
 diff --git a/docs/wiki/Configuration:-Debug-Options.md b/docs/wiki/Configuration:-Debug-Options.md
-index da01c89..04dcf17 100644
+index b43cfe3..ab44f36 100644
 --- a/docs/wiki/Configuration:-Debug-Options.md
 +++ b/docs/wiki/Configuration:-Debug-Options.md
-@@ -36,6 +36,7 @@ debug {
+@@ -33,6 +33,7 @@ debug {
+     honor-xdg-activation-with-invalid-serial
+     skip-cursor-only-updates-during-vrr
      deactivate-unfocused-windows
-     disable-10bit-output
-     nested-show-host-cursor
 +    low-power-frame-callbacks
  }
  
  binds {
-@@ -412,3 +413,21 @@ debug {
-     nested-show-host-cursor
+@@ -386,3 +387,19 @@ binds {
+     Mod+Shift+Ctrl+D { debug-toggle-damage; }
  }
  ```
 +
 +### `low-power-frame-callbacks`
-+
-+<sup>Since: next release</sup>
 +
 +Reduce the CPU and GPU usage of windows that you cannot interact with, which helps on low-end hardware.
 +
@@ -48,51 +46,51 @@ index da01c89..04dcf17 100644
 +}
 +```
 diff --git a/niri-config/src/debug.rs b/niri-config/src/debug.rs
-index d63e5cc..4efbca8 100644
+index c0779a4..14e8d00 100644
 --- a/niri-config/src/debug.rs
 +++ b/niri-config/src/debug.rs
-@@ -27,6 +27,7 @@ pub struct Debug {
+@@ -25,6 +25,7 @@ pub struct Debug {
+     pub honor_xdg_activation_with_invalid_serial: bool,
+     pub deactivate_unfocused_windows: bool,
      pub skip_cursor_only_updates_during_vrr: bool,
-     pub disable_10bit_output: bool,
-     pub nested_show_host_cursor: bool,
 +    pub low_power_frame_callbacks: bool,
  }
  
  #[derive(knuffel::Decode, Debug, Default, PartialEq)]
-@@ -77,6 +78,8 @@ pub struct DebugPart {
-     pub disable_10bit_output: Option<Flag>,
+@@ -71,6 +72,8 @@ pub struct DebugPart {
+     pub deactivate_unfocused_windows: Option<Flag>,
      #[knuffel(child)]
-     pub nested_show_host_cursor: Option<Flag>,
+     pub skip_cursor_only_updates_during_vrr: Option<Flag>,
 +    #[knuffel(child)]
 +    pub low_power_frame_callbacks: Option<Flag>,
  }
  
  impl MergeWith<DebugPart> for Debug {
-@@ -103,6 +106,7 @@ impl MergeWith<DebugPart> for Debug {
+@@ -95,6 +98,7 @@ impl MergeWith<DebugPart> for Debug {
+             honor_xdg_activation_with_invalid_serial,
+             deactivate_unfocused_windows,
              skip_cursor_only_updates_during_vrr,
-             disable_10bit_output,
-             nested_show_host_cursor,
 +            low_power_frame_callbacks,
          );
  
          merge_clone_opt!((self, part), preview_render, render_drm_device);
 diff --git a/niri-config/src/lib.rs b/niri-config/src/lib.rs
-index fad654b..1dfc122 100644
+index 329b766..4d4bbbd 100644
 --- a/niri-config/src/lib.rs
 +++ b/niri-config/src/lib.rs
-@@ -2876,6 +2876,7 @@ mod tests {
+@@ -2262,6 +2262,7 @@ mod tests {
+                 honor_xdg_activation_with_invalid_serial: false,
+                 deactivate_unfocused_windows: false,
                  skip_cursor_only_updates_during_vrr: false,
-                 disable_10bit_output: false,
-                 nested_show_host_cursor: false,
 +                low_power_frame_callbacks: false,
              },
              workspaces: [
                  Workspace {
 diff --git a/src/niri.rs b/src/niri.rs
-index b1e318e..a662d33 100644
+index ec40e01..12a36d4 100644
 --- a/src/niri.rs
 +++ b/src/niri.rs
-@@ -204,6 +204,10 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
+@@ -191,6 +191,10 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
  // should be ~1.995 seconds.
  const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
  
@@ -100,10 +98,10 @@ index b1e318e..a662d33 100644
 +// Nth output refresh cycle (~5 fps at 60 Hz).
 +const LOW_POWER_OVERVIEW_CALLBACK_DIVISOR: u32 = 12;
 +
- /// Parts of the seat keyboard state that get reset when its keymap is replaced.
- #[derive(Debug, Clone, Copy, Default)]
- pub struct SavedKeyboardState {
-@@ -5380,13 +5384,24 @@ impl Niri {
+ pub struct Niri {
+     pub config: Rc<RefCell<Config>>,
+ 
+@@ -5053,13 +5057,24 @@ impl Niri {
  
          let frame_callback_time = get_monotonic_time();
  
@@ -134,7 +132,7 @@ index b1e318e..a662d33 100644
          }
  
          for surface in layer_map_for_output(output).layers() {
-@@ -5451,13 +5466,16 @@ impl Niri {
+@@ -5120,13 +5135,16 @@ impl Niri {
  
          let frame_callback_time = get_monotonic_time();
  
