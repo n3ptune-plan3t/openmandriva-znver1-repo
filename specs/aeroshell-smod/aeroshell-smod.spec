@@ -38,7 +38,7 @@ BuildRequires:  pkgconfig(libdrm)
 
 Requires:       aeroshell-libplasma
 Requires:       kwin
-Requires:       kvantum
+Requires:       qt-theme-kvantum
 
 %description
 SMOD is the Windows 7 style window decoration (with theme) and the caption glow
