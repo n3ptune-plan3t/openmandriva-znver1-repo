@@ -1,0 +1,161 @@
+From d7329559010932bdd7193375758f6030fe8fa421 Mon Sep 17 00:00:00 2001
+From: niri-patch <patch@example.com>
+Date: Sun, 1 Nov 2026 06:44:59 +0000
+Subject: [PATCH] Add low-power-frame-callbacks debug option
+
+Stop the once-a-second frame callback heartbeat to invisible windows and
+throttle frame callbacks to unfocused windows in the overview, to reduce
+CPU and GPU usage on low-end hardware.
+---
+ docs/wiki/Configuration:-Debug-Options.md | 19 ++++++++++
+ niri-config/src/debug.rs                  |  4 +++
+ niri-config/src/lib.rs                    |  1 +
+ src/niri.rs                               | 42 ++++++++++++++++-------
+ 4 files changed, 54 insertions(+), 12 deletions(-)
+
+diff --git a/docs/wiki/Configuration:-Debug-Options.md b/docs/wiki/Configuration:-Debug-Options.md
+index da01c89..04dcf17 100644
+--- a/docs/wiki/Configuration:-Debug-Options.md
++++ b/docs/wiki/Configuration:-Debug-Options.md
+@@ -36,6 +36,7 @@ debug {
+     deactivate-unfocused-windows
+     disable-10bit-output
+     nested-show-host-cursor
++    low-power-frame-callbacks
+ }
+ 
+ binds {
+@@ -412,3 +413,21 @@ debug {
+     nested-show-host-cursor
+ }
+ ```
++
++### `low-power-frame-callbacks`
++
++<sup>Since: next release</sup>
++
++Reduce the CPU and GPU usage of windows that you cannot interact with, which helps on low-end hardware.
++
++- Windows that are not visible (other workspaces, off-screen columns, hidden tabs, fully covered windows) no longer receive the once-a-second frame callback.
++  They still receive one when they need to respond to a configure event.
++- In the overview, unfocused windows receive frame callbacks at a much lower rate (about 5 per second on a 60 Hz output).
++
++Some clients rely on frame callbacks while hidden (for example, to run timers), and they may stall until shown again.
++
++```kdl
++debug {
++    low-power-frame-callbacks
++}
++```
+diff --git a/niri-config/src/debug.rs b/niri-config/src/debug.rs
+index d63e5cc..4efbca8 100644
+--- a/niri-config/src/debug.rs
++++ b/niri-config/src/debug.rs
+@@ -27,6 +27,7 @@ pub struct Debug {
+     pub skip_cursor_only_updates_during_vrr: bool,
+     pub disable_10bit_output: bool,
+     pub nested_show_host_cursor: bool,
++    pub low_power_frame_callbacks: bool,
+ }
+ 
+ #[derive(knuffel::Decode, Debug, Default, PartialEq)]
+@@ -77,6 +78,8 @@ pub struct DebugPart {
+     pub disable_10bit_output: Option<Flag>,
+     #[knuffel(child)]
+     pub nested_show_host_cursor: Option<Flag>,
++    #[knuffel(child)]
++    pub low_power_frame_callbacks: Option<Flag>,
+ }
+ 
+ impl MergeWith<DebugPart> for Debug {
+@@ -103,6 +106,7 @@ impl MergeWith<DebugPart> for Debug {
+             skip_cursor_only_updates_during_vrr,
+             disable_10bit_output,
+             nested_show_host_cursor,
++            low_power_frame_callbacks,
+         );
+ 
+         merge_clone_opt!((self, part), preview_render, render_drm_device);
+diff --git a/niri-config/src/lib.rs b/niri-config/src/lib.rs
+index fad654b..1dfc122 100644
+--- a/niri-config/src/lib.rs
++++ b/niri-config/src/lib.rs
+@@ -2876,6 +2876,7 @@ mod tests {
+                 skip_cursor_only_updates_during_vrr: false,
+                 disable_10bit_output: false,
+                 nested_show_host_cursor: false,
++                low_power_frame_callbacks: false,
+             },
+             workspaces: [
+                 Workspace {
+diff --git a/src/niri.rs b/src/niri.rs
+index b1e318e..a662d33 100644
+--- a/src/niri.rs
++++ b/src/niri.rs
+@@ -204,6 +204,10 @@ const CLEAR_COLOR_LOCKED: [f32; 4] = [0.3, 0.1, 0.1, 1.];
+ // should be ~1.995 seconds.
+ const FRAME_CALLBACK_THROTTLE: Option<Duration> = Some(Duration::from_millis(995));
+ 
++// In the low-power mode, unfocused windows in the overview only get a frame callback on every
++// Nth output refresh cycle (~5 fps at 60 Hz).
++const LOW_POWER_OVERVIEW_CALLBACK_DIVISOR: u32 = 12;
++
+ /// Parts of the seat keyboard state that get reset when its keymap is replaced.
+ #[derive(Debug, Clone, Copy, Default)]
+ pub struct SavedKeyboardState {
+@@ -5380,13 +5384,24 @@ impl Niri {
+ 
+         let frame_callback_time = get_monotonic_time();
+ 
++        let low_power = self.config.borrow().debug.low_power_frame_callbacks;
++        let window_throttle = if low_power {
++            None
++        } else {
++            FRAME_CALLBACK_THROTTLE
++        };
++        let throttle_unfocused = low_power
++            && self.layout.is_overview_open()
++            && sequence % LOW_POWER_OVERVIEW_CALLBACK_DIVISOR != 0;
++
+         for mapped in self.layout.windows_for_output_mut(output) {
+-            mapped.send_frame(
+-                output,
+-                frame_callback_time,
+-                FRAME_CALLBACK_THROTTLE,
+-                should_send,
+-            );
++            // In the overview, windows are small thumbnails, so don't let unfocused ones redraw
++            // at the full refresh rate.
++            if throttle_unfocused && !mapped.is_focused() {
++                continue;
++            }
++
++            mapped.send_frame(output, frame_callback_time, window_throttle, should_send);
+         }
+ 
+         for surface in layer_map_for_output(output).layers() {
+@@ -5451,13 +5466,16 @@ impl Niri {
+ 
+         let frame_callback_time = get_monotonic_time();
+ 
++        // In the low-power mode, don't wake up hidden windows once a second. They still get
++        // frame callbacks when they need to respond to a configure.
++        let window_throttle = if self.config.borrow().debug.low_power_frame_callbacks {
++            None
++        } else {
++            FRAME_CALLBACK_THROTTLE
++        };
++
+         self.layout.with_windows_mut(|mapped, _| {
+-            mapped.send_frame(
+-                output,
+-                frame_callback_time,
+-                FRAME_CALLBACK_THROTTLE,
+-                |_, _| None,
+-            );
++            mapped.send_frame(output, frame_callback_time, window_throttle, |_, _| None);
+         });
+ 
+         for (output, state) in self.output_state.iter() {
+-- 
+2.43.0
