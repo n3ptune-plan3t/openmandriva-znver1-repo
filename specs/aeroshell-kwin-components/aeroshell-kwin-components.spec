@@ -37,6 +37,8 @@ BuildRequires:  cmake(KDecoration3)
 BuildRequires:  cmake(PlasmaWaylandProtocols)
 BuildRequires:  kwin-devel
 BuildRequires:  kwin-x11-devel
+BuildRequires:  kwin
+BuildRequires:  kwin-x11
 BuildRequires:  aeroshell-libplasma
 BuildRequires:  pkgconfig(epoxy)
 BuildRequires:  pkgconfig(wayland-protocols)
