@@ -10,7 +10,7 @@ URL:            https://github.com/YaLTeR/niri
 Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 Source1:        %{url}/releases/download/v%{version}/niri-%{version}-vendored-dependencies.tar.xz
 Source2:        cargo_config
-Source3:        niri-low-power-frame-callbacks.patch
+Patch0:         niri-low-power-frame-callbacks.patch
 
 BuildRequires:  rust-packaging
 BuildRequires:  clang
