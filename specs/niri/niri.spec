@@ -3,13 +3,14 @@
 %bcond_with test
 Name:           niri
 Version:        26.04
-Release:        2
+Release:        3
 Summary:        Scrollable-tiling Wayland compositor
 License:        GPL-3.0-or-later
 URL:            https://github.com/YaLTeR/niri
 Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 Source1:        %{url}/releases/download/v%{version}/niri-%{version}-vendored-dependencies.tar.xz
 Source2:        cargo_config
+Source3:        niri-low-power-frame-callbacks.patch
 
 BuildRequires:  rust-packaging
 BuildRequires:  clang
