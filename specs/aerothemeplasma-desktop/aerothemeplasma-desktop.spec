@@ -80,7 +80,7 @@ BuildRequires:  desktop-file-utils
 
 Requires:       plasma-desktop
 Requires:       plasma-workspace
-Requires:       kvantum
+Requires:       qt-theme-kvantum
 Requires:       sddm
 Requires:       polkit-kde-agent-1
 Requires:       kirigami-addons
