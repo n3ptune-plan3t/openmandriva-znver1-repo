@@ -1,0 +1,30 @@
+From ea3d44dd8fc08bc6777650698fd2fda2195d22eb Mon Sep 17 00:00:00 2001
+From: n <n@e>
+Date: Sun, 1 Nov 2026 17:37:10 +0000
+Subject: [PATCH] Don't allocate xray effect buffers when blur is globally off
+
+Surfaces requesting blur via ext-background-effect (e.g. Noctalia) forced the
+effect on even with blur { off }, which still enabled xray and allocated
+full-output offscreen textures that were never freed.
+---
+ src/render_helpers/background_effect.rs | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/render_helpers/background_effect.rs b/src/render_helpers/background_effect.rs
+index d148b6c..67e6fce 100644
+--- a/src/render_helpers/background_effect.rs
++++ b/src/render_helpers/background_effect.rs
+@@ -121,6 +121,11 @@ impl BackgroundEffect {
+             effect.blur == Some(true)
+         };
+ 
++        // With blur globally turned off, don't treat blur as an active effect. Otherwise it
++        // would still enable xray, allocating full-output effect buffers (and keeping them
++        // forever) just to draw an unblurred copy of the background.
++        let blur = blur && !self.blur_config.off;
++
+         let mut options = Options {
+             blur,
+             xray: effect.xray == Some(true),
+-- 
+2.43.0
