@@ -23,6 +23,7 @@ BuildRequires:  cmake(KF6CoreAddons)
 BuildRequires:  cmake(KF6I18n)
 BuildRequires:  cmake(KDecoration3)
 BuildRequires:  kwin-x11-devel
+BuildRequires:  kwin-x11
 BuildRequires:  aeroshell-smod
 BuildRequires:  pkgconfig(epoxy)
 BuildRequires:  pkgconfig(xkbcommon)
