@@ -72,6 +72,7 @@ BuildRequires:  pkgconfig(xcb-randr)
 BuildRequires:  pkgconfig(xcb-shm)
 BuildRequires:  pkgconfig(xcb-damage)
 BuildRequires:  pkgconfig(gmp)
+BuildRequires:  kwin
 BuildRequires:  kirigami-addons
 BuildRequires:  plasma-wayland-protocols
 BuildRequires:  %{_lib}plasma-workspace-devel
@@ -105,7 +106,7 @@ Summary:        AeroThemePlasma X11 session
 Group:          Graphical desktop/KDE
 Requires:       %{name} = %{EVRD}
 Requires:       kwin-x11
-Requires:       plasma-x11-session
+Requires:       plasma-workspace-x11
 Recommends:     aeroshell-kwin-components-x11
 Recommends:     aeroshell-smodglow-x11
 
