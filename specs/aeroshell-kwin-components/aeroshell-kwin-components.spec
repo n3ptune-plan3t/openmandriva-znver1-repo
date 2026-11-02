@@ -16,6 +16,8 @@ BuildRequires:  cmake(Qt6Widgets)
 BuildRequires:  cmake(Qt6Quick)
 BuildRequires:  cmake(Qt6DBus)
 BuildRequires:  cmake(Qt6UiTools)
+BuildRequires:  cmake(Qt6UiPlugin)
+BuildRequires:  cmake(Qt6Designer)
 BuildRequires:  cmake(Qt6OpenGL)
 BuildRequires:  cmake(Qt6Network)
 BuildRequires:  cmake(Qt6Xml)
@@ -53,6 +55,7 @@ BuildRequires:  pkgconfig(libinput)
 BuildRequires:  pkgconfig(lcms2)
 BuildRequires:  pkgconfig(libdisplay-info)
 BuildRequires:  pkgconfig(libpipewire-0.3)
+BuildRequires:  qt6-qttools-devel
 
 Requires:       aeroshell-libplasma
 Requires:       kwin
