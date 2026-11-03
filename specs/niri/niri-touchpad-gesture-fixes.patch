@@ -1,4 +1,4 @@
-From 171b7ca6de9fd0df7efae8204d4fc524fd0c6daf Mon Sep 17 00:00:00 2001
+From ed10be60cf27f34244259fe04b887f0e93c2b358 Mon Sep 17 00:00:00 2001
 From: n <n@e>
 Date: Tue, 3 Nov 2026 19:20:11 +0000
 Subject: [PATCH] Fix fast touchpad swipes being dropped or snapping back
@@ -27,7 +27,7 @@ Two problems made quick 3- and 4-finger swipes unreliable:
  6 files changed, 145 insertions(+), 36 deletions(-)
 
 diff --git a/src/input/mod.rs b/src/input/mod.rs
-index f1ad4932..c832eda3 100644
+index f1ad4932..0acaabfe 100644
 --- a/src/input/mod.rs
 +++ b/src/input/mod.rs
 @@ -3746,6 +3746,7 @@ impl State {
@@ -38,7 +38,7 @@ index f1ad4932..c832eda3 100644
  
              // We handled this event.
              return;
-@@ -3802,14 +3803,30 @@ impl State {
+@@ -3802,14 +3803,31 @@ impl State {
  
          let is_overview_open = self.niri.layout.is_overview_open();
  
@@ -46,7 +46,8 @@ index f1ad4932..c832eda3 100644
 +
 +        // Deltas to feed to the gesture trackers. Normally just this event's delta, but when a
 +        // 3-finger swipe gets decided, also everything that came in while it was undecided.
-+        let mut deltas = Vec::new();
++        // (An empty Vec doesn't allocate, so the common case stays allocation-free.)
++        let mut replay = Vec::new();
 +
          if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
              *cx += delta_x;
@@ -66,18 +67,17 @@ index f1ad4932..c832eda3 100644
 +
 +            {
                  self.niri.gesture_swipe_3f_cumulative = None;
-+                deltas = std::mem::take(&mut self.niri.gesture_swipe_3f_pending);
++                replay = std::mem::take(&mut self.niri.gesture_swipe_3f_pending);
  
                  if let Some(output) = self.niri.output_under_cursor() {
                      if cx.abs() > cy.abs() {
-@@ -3839,40 +3856,55 @@ impl State {
+@@ -3839,40 +3857,54 @@ impl State {
              }
          }
  
 -        let timestamp = Duration::from_micros(event.time());
-+        if deltas.is_empty() {
-+            deltas.push((delta_x, delta_y, uninverted_delta_y, timestamp));
-+        }
++        let single = [(delta_x, delta_y, uninverted_delta_y, timestamp)];
++        let deltas: &[_] = if replay.is_empty() { &single } else { &replay };
  
          let mut handled = false;
 -        let res = self
@@ -90,7 +90,7 @@ index f1ad4932..c832eda3 100644
 +        let mut redraw_outputs = Vec::new();
 +        let mut redraw_all = false;
 +
-+        for (delta_x, delta_y, uninverted_delta_y, timestamp) in deltas {
++        for &(delta_x, delta_y, uninverted_delta_y, timestamp) in deltas {
 +            let res = self
 +                .niri
 +                .layout
