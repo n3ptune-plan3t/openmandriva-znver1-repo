@@ -1,0 +1,378 @@
+From 171b7ca6de9fd0df7efae8204d4fc524fd0c6daf Mon Sep 17 00:00:00 2001
+From: n <n@e>
+Date: Tue, 3 Nov 2026 19:20:11 +0000
+Subject: [PATCH] Fix fast touchpad swipes being dropped or snapping back
+
+Two problems made quick 3- and 4-finger swipes unreliable:
+
+* Gesture end took its idle time from the current clock, not from the event.
+  When the compositor is busy, the end event is handled late, so the idle gap
+  dilutes (or, past the 150 ms history window, wipes out) the swipe velocity
+  and the gesture snaps back instead of switching. Use the end event's own
+  timestamp, via new *_gesture_end_at() variants; the old functions keep the
+  clock behaviour for every other caller.
+
+* A 3-finger swipe only starts after 16 units of movement, and everything
+  before that was thrown away, so the gesture started from a standstill with
+  the first part of the flick missing from its position and velocity. Buffer
+  those deltas and feed them to the gesture when it starts. Also stop leaking
+  the undecided updates to the client as swipe updates without a begin.
+---
+ src/input/mod.rs        | 105 ++++++++++++++++++++++++++++------------
+ src/layout/mod.rs       |  30 ++++++++++--
+ src/layout/monitor.rs   |  14 +++++-
+ src/layout/scrolling.rs |  14 +++++-
+ src/layout/workspace.rs |  11 ++++-
+ src/niri.rs             |   7 +++
+ 6 files changed, 145 insertions(+), 36 deletions(-)
+
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index f1ad4932..c832eda3 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -3746,6 +3746,7 @@ impl State {
+ 
+         if event.fingers() == 3 {
+             self.niri.gesture_swipe_3f_cumulative = Some((0., 0.));
++            self.niri.gesture_swipe_3f_pending.clear();
+ 
+             // We handled this event.
+             return;
+@@ -3802,14 +3803,30 @@ impl State {
+ 
+         let is_overview_open = self.niri.layout.is_overview_open();
+ 
++        let timestamp = Duration::from_micros(event.time());
++
++        // Deltas to feed to the gesture trackers. Normally just this event's delta, but when a
++        // 3-finger swipe gets decided, also everything that came in while it was undecided.
++        let mut deltas = Vec::new();
++
+         if let Some((cx, cy)) = &mut self.niri.gesture_swipe_3f_cumulative {
+             *cx += delta_x;
+             *cy += delta_y;
++            self.niri
++                .gesture_swipe_3f_pending
++                .push((delta_x, delta_y, uninverted_delta_y, timestamp));
+ 
+             // Check if the gesture moved far enough to decide. Threshold copied from GNOME Shell.
+             let (cx, cy) = (*cx, *cy);
+-            if cx * cx + cy * cy >= 16. * 16. {
++            if cx * cx + cy * cy < 16. * 16. {
++                // Still undecided; this event is part of the 3-finger swipe, so don't let it leak
++                // to the client as an update without a begin.
++                return;
++            }
++
++            {
+                 self.niri.gesture_swipe_3f_cumulative = None;
++                deltas = std::mem::take(&mut self.niri.gesture_swipe_3f_pending);
+ 
+                 if let Some(output) = self.niri.output_under_cursor() {
+                     if cx.abs() > cy.abs() {
+@@ -3839,40 +3856,55 @@ impl State {
+             }
+         }
+ 
+-        let timestamp = Duration::from_micros(event.time());
++        if deltas.is_empty() {
++            deltas.push((delta_x, delta_y, uninverted_delta_y, timestamp));
++        }
+ 
+         let mut handled = false;
+-        let res = self
+-            .niri
+-            .layout
+-            .workspace_switch_gesture_update(delta_y, timestamp, true);
+-        if let Some(output) = res {
+-            if let Some(output) = output {
+-                self.niri.queue_redraw(&output);
++        let mut redraw_outputs = Vec::new();
++        let mut redraw_all = false;
++
++        for (delta_x, delta_y, uninverted_delta_y, timestamp) in deltas {
++            let res = self
++                .niri
++                .layout
++                .workspace_switch_gesture_update(delta_y, timestamp, true);
++            if let Some(output) = res {
++                if let Some(output) = output {
++                    redraw_outputs.push(output);
++                }
++                handled = true;
+             }
+-            handled = true;
+-        }
+ 
+-        let res = self
+-            .niri
+-            .layout
+-            .view_offset_gesture_update(delta_x, timestamp, true);
+-        if let Some(output) = res {
+-            if let Some(output) = output {
+-                self.niri.queue_redraw(&output);
++            let res = self
++                .niri
++                .layout
++                .view_offset_gesture_update(delta_x, timestamp, true);
++            if let Some(output) = res {
++                if let Some(output) = output {
++                    redraw_outputs.push(output);
++                }
++                handled = true;
++            }
++
++            let res = self
++                .niri
++                .layout
++                .overview_gesture_update(-uninverted_delta_y, timestamp);
++            if let Some(redraw) = res {
++                if redraw {
++                    redraw_all = true;
++                }
++                handled = true;
+             }
+-            handled = true;
+         }
+ 
+-        let res = self
+-            .niri
+-            .layout
+-            .overview_gesture_update(-uninverted_delta_y, timestamp);
+-        if let Some(redraw) = res {
+-            if redraw {
+-                self.niri.queue_redraw_all();
++        if redraw_all {
++            self.niri.queue_redraw_all();
++        } else {
++            for output in redraw_outputs {
++                self.niri.queue_redraw(&output);
+             }
+-            handled = true;
+         }
+ 
+         if handled {
+@@ -3897,21 +3929,34 @@ impl State {
+ 
+     fn on_gesture_swipe_end<I: InputBackend>(&mut self, event: I::GestureSwipeEndEvent) {
+         self.niri.gesture_swipe_3f_cumulative = None;
++        self.niri.gesture_swipe_3f_pending.clear();
++
++        // Use the time at which the fingers were lifted rather than the current time: when the
++        // compositor is busy, events are processed late, and the idle time between the last
++        // update and "now" would otherwise wash out the velocity of a fast swipe (or even drop
++        // all of its history) so that it snaps back instead of going through.
++        let end_time = Some(Duration::from_micros(event.time()));
+ 
+         let mut handled = false;
+-        let res = self.niri.layout.workspace_switch_gesture_end(Some(true));
++        let res = self
++            .niri
++            .layout
++            .workspace_switch_gesture_end_at(Some(true), end_time);
+         if let Some(output) = res {
+             self.niri.queue_redraw(&output);
+             handled = true;
+         }
+ 
+-        let res = self.niri.layout.view_offset_gesture_end(Some(true));
++        let res = self
++            .niri
++            .layout
++            .view_offset_gesture_end_at(Some(true), end_time);
+         if let Some(output) = res {
+             self.niri.queue_redraw(&output);
+             handled = true;
+         }
+ 
+-        let res = self.niri.layout.overview_gesture_end();
++        let res = self.niri.layout.overview_gesture_end_at(end_time);
+         if res {
+             self.niri.queue_redraw_all();
+             handled = true;
+diff --git a/src/layout/mod.rs b/src/layout/mod.rs
+index 5c4dd639..9e0eb78d 100644
+--- a/src/layout/mod.rs
++++ b/src/layout/mod.rs
+@@ -3631,13 +3631,21 @@ impl<W: LayoutElement> Layout<W> {
+     }
+ 
+     pub fn workspace_switch_gesture_end(&mut self, is_touchpad: Option<bool>) -> Option<Output> {
++        self.workspace_switch_gesture_end_at(is_touchpad, None)
++    }
++
++    pub fn workspace_switch_gesture_end_at(
++        &mut self,
++        is_touchpad: Option<bool>,
++        end_time: Option<Duration>,
++    ) -> Option<Output> {
+         let monitors = match &mut self.monitor_set {
+             MonitorSet::Normal { monitors, .. } => monitors,
+             MonitorSet::NoOutputs { .. } => return None,
+         };
+ 
+         for monitor in monitors {
+-            if monitor.workspace_switch_gesture_end(is_touchpad) {
++            if monitor.workspace_switch_gesture_end_at(is_touchpad, end_time) {
+                 return Some(monitor.output.clone());
+             }
+         }
+@@ -3703,6 +3711,14 @@ impl<W: LayoutElement> Layout<W> {
+     }
+ 
+     pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> Option<Output> {
++        self.view_offset_gesture_end_at(is_touchpad, None)
++    }
++
++    pub fn view_offset_gesture_end_at(
++        &mut self,
++        is_touchpad: Option<bool>,
++        end_time: Option<Duration>,
++    ) -> Option<Output> {
+         let monitors = match &mut self.monitor_set {
+             MonitorSet::Normal { monitors, .. } => monitors,
+             MonitorSet::NoOutputs { .. } => return None,
+@@ -3710,7 +3726,7 @@ impl<W: LayoutElement> Layout<W> {
+ 
+         for monitor in monitors {
+             for ws in &mut monitor.workspaces {
+-                if ws.view_offset_gesture_end(is_touchpad) {
++                if ws.view_offset_gesture_end_at(is_touchpad, end_time) {
+                     return Some(monitor.output.clone());
+                 }
+             }
+@@ -3756,12 +3772,20 @@ impl<W: LayoutElement> Layout<W> {
+     }
+ 
+     pub fn overview_gesture_end(&mut self) -> bool {
++        self.overview_gesture_end_at(None)
++    }
++
++    /// Ends the overview gesture.
++    ///
++    /// `end_time` is the timestamp of the event that ended the gesture, in the same time base as
++    /// the gesture updates. When `None`, the current time is used.
++    pub fn overview_gesture_end_at(&mut self, end_time: Option<Duration>) -> bool {
+         let Some(OverviewProgress::Gesture(gesture)) = &mut self.overview_progress else {
+             return false;
+         };
+ 
+         // Take into account any idle time between the last event and now.
+-        let now = self.clock.now_unadjusted();
++        let now = end_time.unwrap_or_else(|| self.clock.now_unadjusted());
+         gesture.tracker.push(0., now);
+ 
+         let total_height = OVERVIEW_GESTURE_MOVEMENT;
+diff --git a/src/layout/monitor.rs b/src/layout/monitor.rs
+index 53c06069..1819e694 100644
+--- a/src/layout/monitor.rs
++++ b/src/layout/monitor.rs
+@@ -1967,6 +1967,18 @@ impl<W: LayoutElement> Monitor<W> {
+     }
+ 
+     pub fn workspace_switch_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
++        self.workspace_switch_gesture_end_at(is_touchpad, None)
++    }
++
++    /// Ends the workspace switch gesture.
++    ///
++    /// `end_time` is the timestamp of the event that ended the gesture, in the same time base as
++    /// the gesture updates. When `None`, the current time is used.
++    pub fn workspace_switch_gesture_end_at(
++        &mut self,
++        is_touchpad: Option<bool>,
++        end_time: Option<Duration>,
++    ) -> bool {
+         let Some(WorkspaceSwitch::Gesture(gesture)) = &self.workspace_switch else {
+             return false;
+         };
+@@ -1989,7 +2001,7 @@ impl<W: LayoutElement> Monitor<W> {
+         };
+ 
+         // Take into account any idle time between the last event and now.
+-        let now = self.clock.now_unadjusted();
++        let now = end_time.unwrap_or_else(|| self.clock.now_unadjusted());
+         gesture.tracker.push(0., now);
+ 
+         let mut rubber_band = WORKSPACE_GESTURE_RUBBER_BAND;
+diff --git a/src/layout/scrolling.rs b/src/layout/scrolling.rs
+index 007bcaf5..ff924080 100644
+--- a/src/layout/scrolling.rs
++++ b/src/layout/scrolling.rs
+@@ -3159,6 +3159,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
+     }
+ 
+     pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
++        self.view_offset_gesture_end_at(is_touchpad, None)
++    }
++
++    /// Ends the view offset gesture.
++    ///
++    /// `end_time` is the timestamp of the event that ended the gesture, in the same time base as
++    /// the gesture updates. When `None`, the current time is used.
++    pub fn view_offset_gesture_end_at(
++        &mut self,
++        is_touchpad: Option<bool>,
++        end_time: Option<Duration>,
++    ) -> bool {
+         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
+             return false;
+         };
+@@ -3173,7 +3185,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
+         // effort and bug potential.
+ 
+         // Take into account any idle time between the last event and now.
+-        let now = self.clock.now_unadjusted();
++        let now = end_time.unwrap_or_else(|| self.clock.now_unadjusted());
+         gesture.tracker.push(0., now);
+ 
+         let norm_factor = if gesture.is_touchpad {
+diff --git a/src/layout/workspace.rs b/src/layout/workspace.rs
+index 49548a83..7c9683e8 100644
+--- a/src/layout/workspace.rs
++++ b/src/layout/workspace.rs
+@@ -1883,7 +1883,16 @@ impl<W: LayoutElement> Workspace<W> {
+     }
+ 
+     pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
+-        self.scrolling.view_offset_gesture_end(is_touchpad)
++        self.view_offset_gesture_end_at(is_touchpad, None)
++    }
++
++    pub fn view_offset_gesture_end_at(
++        &mut self,
++        is_touchpad: Option<bool>,
++        end_time: Option<Duration>,
++    ) -> bool {
++        self.scrolling
++            .view_offset_gesture_end_at(is_touchpad, end_time)
+     }
+ 
+     pub fn dnd_scroll_gesture_begin(&mut self) {
+diff --git a/src/niri.rs b/src/niri.rs
+index ec40e01c..f523442f 100644
+--- a/src/niri.rs
++++ b/src/niri.rs
+@@ -370,6 +370,12 @@ pub struct Niri {
+     pub pointer_inside_hot_corner: bool,
+     pub tablet_cursor_location: Option<Point<f64, Logical>>,
+     pub gesture_swipe_3f_cumulative: Option<(f64, f64)>,
++    /// Deltas received while deciding the direction of a 3-finger swipe.
++    ///
++    /// Each entry is (delta_x, delta_y, uninverted_delta_y, timestamp). They are fed to the
++    /// gesture once it starts, so that the gesture position and velocity include the movement
++    /// that happened before the direction was decided.
++    pub gesture_swipe_3f_pending: Vec<(f64, f64, f64, Duration)>,
+     pub overview_scroll_swipe_gesture: ScrollSwipeGesture,
+     pub vertical_wheel_tracker: ScrollTracker,
+     pub horizontal_wheel_tracker: ScrollTracker,
+@@ -2581,6 +2587,7 @@ impl Niri {
+             pointer_inside_hot_corner: false,
+             tablet_cursor_location: None,
+             gesture_swipe_3f_cumulative: None,
++            gesture_swipe_3f_pending: Vec::new(),
+             overview_scroll_swipe_gesture: ScrollSwipeGesture::new(),
+             vertical_wheel_tracker: ScrollTracker::new(120),
+             horizontal_wheel_tracker: ScrollTracker::new(120),
+-- 
+2.43.0
