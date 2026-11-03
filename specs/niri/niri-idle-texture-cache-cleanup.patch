@@ -1,18 +1,21 @@
-From 7164c31c6149012ef5494b088549b1646b58ce04 Mon Sep 17 00:00:00 2001
+From 883b631a8d3aa99ad3346b28d2909a668512d188 Mon Sep 17 00:00:00 2001
 From: n <n@e>
-Date: Sun, 1 Nov 2026 17:39:29 +0000
-Subject: [PATCH] Clean up renderer texture cache on the fallback timer
+Date: Tue, 3 Nov 2026 19:19:23 +0000
+Subject: [PATCH] Clean up renderer texture cache and flush the GPU queue on
+ the fallback timer
 
 The GLES renderer only drops imports of released client dmabufs at the start
-of a frame. When little or nothing is drawn, dead imports keep the clients'
-video memory alive. Run the cleanup from the existing one-second timer.
+of a frame, and deleted GL objects are only released by the driver once the
+command stream is flushed. When little or nothing is drawn, dead imports and
+deleted textures keep video memory alive. Run the cleanup from the existing
+one-second timer and flush afterwards.
 ---
- src/backend/mod.rs | 16 ++++++++++++++++
+ src/backend/mod.rs | 25 +++++++++++++++++++++++++
  src/niri.rs        |  1 +
- 2 files changed, 17 insertions(+)
+ 2 files changed, 26 insertions(+)
 
 diff --git a/src/backend/mod.rs b/src/backend/mod.rs
-index 49fbc6b..613472f 100644
+index 49fbc6b0..6ffaa5d1 100644
 --- a/src/backend/mod.rs
 +++ b/src/backend/mod.rs
 @@ -5,6 +5,7 @@ use std::time::Duration;
@@ -23,7 +26,7 @@ index 49fbc6b..613472f 100644
  use smithay::output::Output;
  use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
  
-@@ -83,6 +84,21 @@ impl Backend {
+@@ -83,6 +84,30 @@ impl Backend {
          }
      }
  
@@ -38,6 +41,15 @@ index 49fbc6b..613472f 100644
 +        self.with_primary_renderer(|renderer| {
 +            if let Err(err) = renderer.cleanup_texture_cache() {
 +                warn!("error cleaning up renderer texture cache: {err:?}");
++                return;
++            }
++
++            // Deleting a GL object only queues the release: the driver keeps the underlying
++            // buffer alive until the commands that might still reference it are submitted, which
++            // never happens while niri is idle and not rendering. Flush so that the memory is
++            // actually released.
++            if let Err(err) = renderer.with_context(|gl| unsafe { gl.Flush() }) {
++                warn!("error flushing renderer after texture cache cleanup: {err:?}");
 +            }
 +        });
 +    }
@@ -46,7 +58,7 @@ index 49fbc6b..613472f 100644
          &mut self,
          niri: &mut Niri,
 diff --git a/src/niri.rs b/src/niri.rs
-index ec40e01..cd57e96 100644
+index ec40e01c..cd57e96f 100644
 --- a/src/niri.rs
 +++ b/src/niri.rs
 @@ -2426,6 +2426,7 @@ impl Niri {
