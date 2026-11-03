@@ -1,0 +1,86 @@
+From a3f4483cf57e96896178333d91df71f74efea3f5 Mon Sep 17 00:00:00 2001
+From: n <n@e>
+Date: Tue, 3 Nov 2026 19:29:46 +0000
+Subject: [PATCH] Add touchpad swipe-sensitivity option
+
+Scale 3- and 4-finger swipe movement by a configurable factor (default 1.0,
+clamped to 0.1-10), so the gestures can be tuned to need less or more finger
+travel. The 16-unit direction threshold is scaled along with the movement.
+---
+ docs/wiki/Configuration:-Input.md |  2 ++
+ niri-config/src/input.rs          |  2 ++
+ niri-config/src/lib.rs            |  1 +
+ src/input/mod.rs                  | 13 +++++++++++++
+ 4 files changed, 18 insertions(+)
+
+diff --git a/docs/wiki/Configuration:-Input.md b/docs/wiki/Configuration:-Input.md
+index 62f70b5a..b5cc72ef 100644
+--- a/docs/wiki/Configuration:-Input.md
++++ b/docs/wiki/Configuration:-Input.md
+@@ -38,6 +38,7 @@ input {
+         // accel-profile "flat"
+         // scroll-factor 1.0
+         // scroll-factor vertical=1.0 horizontal=-2.0
++        // swipe-sensitivity 1.0
+         // scroll-method "two-finger"
+         // scroll-button 273
+         // scroll-button-lock
+@@ -251,6 +252,7 @@ Settings specific to `touchpad`s:
+ - `tap-button-map`: can be `left-right-middle` or `left-middle-right`, controls which button corresponds to a two-finger tap and a three-finger tap.
+ - `click-method`: can be `button-areas` or `clickfinger`, changes the [click method](https://wayland.freedesktop.org/libinput/doc/latest/clickpad-softbuttons.html).
+ - `disabled-on-external-mouse`: do not send events while external pointer device is plugged in.
++- `swipe-sensitivity`: scales how far the 3- and 4-finger swipe gestures move for a given finger travel. Values above 1.0 make the gestures need less finger movement, values below 1.0 more. The value is clamped to 0.1–10. The default is 1.0.
+ 
+ Settings specific to `touchpad` and `mouse`:
+ 
+diff --git a/niri-config/src/input.rs b/niri-config/src/input.rs
+index dceb5c6c..cd74c00e 100644
+--- a/niri-config/src/input.rs
++++ b/niri-config/src/input.rs
+@@ -221,6 +221,8 @@ pub struct Touchpad {
+     pub middle_emulation: bool,
+     #[knuffel(child)]
+     pub scroll_factor: Option<ScrollFactor>,
++    #[knuffel(child, unwrap(argument))]
++    pub swipe_sensitivity: Option<FloatOrInt<0, 10>>,
+ }
+ 
+ #[derive(knuffel::Decode, Debug, Default, Clone, PartialEq)]
+diff --git a/niri-config/src/lib.rs b/niri-config/src/lib.rs
+index 329b7669..bb8d2033 100644
+--- a/niri-config/src/lib.rs
++++ b/niri-config/src/lib.rs
+@@ -1028,6 +1028,7 @@ mod tests {
+                             vertical: None,
+                         },
+                     ),
++                    swipe_sensitivity: None,
+                 },
+                 mouse: Mouse {
+                     off: false,
+diff --git a/src/input/mod.rs b/src/input/mod.rs
+index 0acaabfe..2cc0298d 100644
+--- a/src/input/mod.rs
++++ b/src/input/mod.rs
+@@ -3791,6 +3791,19 @@ impl State {
+             delta_y = libinput_event.dy_unaccelerated();
+         }
+ 
++        // Scale the movement so that the gestures need less or more finger travel.
++        let sensitivity = self
++            .niri
++            .config
++            .borrow()
++            .input
++            .touchpad
++            .swipe_sensitivity
++            .map_or(1., |x| x.0)
++            .clamp(0.1, 10.);
++        delta_x *= sensitivity;
++        delta_y *= sensitivity;
++
+         let uninverted_delta_y = delta_y;
+ 
+         let device = event.device();
+-- 
+2.43.0
