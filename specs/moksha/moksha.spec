@@ -4,7 +4,7 @@
 
 Name:           moksha
 Version:        0.4.2
-Release:        10
+Release:        11
 Summary:        Moksha desktop, a fork of Enlightenment E17 (from Bodhi Linux)
 License:        BSD-2-Clause
 Group:          Graphical desktop/Other
@@ -20,6 +20,8 @@ Patch2:         moksha-middleclick-titlebar-close.patch
 Patch3:         moksha-shelf-exclusive-space.patch
 # 5. damped spring effect when changing desk
 Patch4:         moksha-desk-flip-spring.patch
+# 6. Port of i3-wm's tabbed layout
+Patch5:         moksha-tiling-tabbed-layout.patch
 
 BuildSystem:    autotools
 BuildOption:    --sysconfdir=%{_sysconfdir}
