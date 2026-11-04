@@ -1,0 +1,921 @@
+diff -urN a/src/modules/tiling/README b/src/modules/tiling/README
+--- a/src/modules/tiling/README
++++ b/src/modules/tiling/README
+@@ -10,3 +10,17 @@
+ packed in the last column.
+ 
+ Resizing or moving a window will try to resize or move the column it is in.
++
++Tabbed layout
++=============
++
++The "Toggle tabbed layout" action (toggle_tabbed) switches the current desk to
++a tabbed layout, modelled on i3's tabbed containers: the windows of a stack no
++longer split it, they all fill it and a tab bar on top lists them. Only the
++selected tab is visible. Click a tab to select it, scroll over the bar to
++switch tabs.
++
++"Focus next/previous tab (or window)" (tab_next, tab_prev) steps through the
++tabs and carries on into the next stack, landing on its visible tab. When the
++desk is not tabbed they behave like the taskbar-order focus actions, which
++makes them good targets for touchpad gesture bindings.
+diff -urN a/src/modules/tiling/e_mod_config.c b/src/modules/tiling/e_mod_config.c
+--- a/src/modules/tiling/e_mod_config.c
++++ b/src/modules/tiling/e_mod_config.c
+@@ -72,6 +72,7 @@
+         newvd->zone_num = vd->zone_num;
+         newvd->nb_stacks = vd->nb_stacks;
+         newvd->use_rows = vd->use_rows;
++        newvd->tabbed = vd->tabbed;
+ 
+         EINA_LIST_APPEND(cfdata->config.vdesks, newvd);
+     }
+@@ -318,6 +319,7 @@
+         newvd->zone_num = vd->zone_num;
+         newvd->nb_stacks = vd->nb_stacks;
+         newvd->use_rows = vd->use_rows;
++        newvd->tabbed = vd->tabbed;
+ 
+         EINA_LIST_APPEND(tiling_g.config->vdesks, newvd);
+     }
+diff -urN a/src/modules/tiling/e_mod_tiling.c b/src/modules/tiling/e_mod_tiling.c
+--- a/src/modules/tiling/e_mod_tiling.c
++++ b/src/modules/tiling/e_mod_tiling.c
+@@ -55,6 +55,7 @@
+          E_Maximize  maximized;
+          const char *bordername;
+     } orig;
++    Eina_Bool tab_active;
+     overlay_t overlay;
+     char key[4];
+ } Border_Extra;
+@@ -97,7 +98,11 @@
+                          *handler_desk_before_show,
+                          *handler_desk_set,
+                          *handler_container_resize,
+-                         *handler_icon_change;
++                         *handler_icon_change,
++                         *handler_focus_in,
++                         *handler_focus_out,
++                         *handler_property;
++    Ecore_Job            *tabs_job;
+     E_Border_Hook        *pre_border_assign_hook;
+     E_Border_Menu_Hook   *border_menu_hook;
+     Desk_Split_Type      *current_split_type;
+@@ -123,7 +128,10 @@
+                          *act_send_ne,
+                          *act_send_nw,
+                          *act_send_se,
+-                         *act_send_sw;
++                         *act_send_sw,
++                         *act_toggle_tabbed,
++                         *act_tab_next,
++                         *act_tab_prev;
+ 
+     int                   warp_x,
+                           warp_y,
+@@ -711,6 +719,510 @@
+ }
+ 
+ /* }}} */
++/* Tabs {{{*/
++
++#define TILING_TAB_HEIGHT    22
++#define TILING_TAB_FONT      11
++#define TILING_TAB_PAD       6
++#define TILING_TAB_FONT_NAME "Sans"
++
++typedef struct _Tab_Item {
++    E_Border    *bd;
++    Evas_Object *frame, *fill, *clip, *label;
++} Tab_Item;
++
++struct _Tab_Bar {
++    E_Popup   *popup;
++    Eina_List *items;
++    E_Border  *active;
++};
++
++enum {
++    TAB_FOCUSED,
++    TAB_ACTIVE,
++    TAB_UNFOCUSED,
++    TAB_URGENT
++};
++
++/* i3's default colors: border, background, text */
++static const struct {
++    int border, fill, text;
++} _tab_colors[] = {
++    { 0x285577, 0x4c7899, 0xffffff },  /* focused */
++    { 0x333333, 0x5f676a, 0xffffff },  /* visible tab of an unfocused stack */
++    { 0x333333, 0x222222, 0x888888 },  /* unfocused */
++    { 0x2f343a, 0x900000, 0xffffff },  /* urgent */
++};
++
++static void _tabs_schedule(void);
++
++static int
++_tab_bar_height(void)
++{
++    int h = (int)(TILING_TAB_HEIGHT * e_scale);
++
++    return MAX(h, 8);
++}
++
++static Eina_Bool
++_tab_stack_is_tabbed(const Tiling_Info *tinfo, int stack)
++{
++    return tinfo->conf && tinfo->conf->tabbed
++        && tinfo->stacks[stack] && tinfo->stacks[stack]->next;
++}
++
++/* The area of a stack, tab bar included. */
++static void
++_tab_stack_rect(const Tiling_Info *tinfo, int stack,
++                int *x, int *y, int *w, int *h)
++{
++    int zx, zy, zw, zh;
++
++    e_zone_useful_geometry_get(tinfo->desk->zone, &zx, &zy, &zw, &zh);
++    if (tinfo->conf->use_rows) {
++        *x = zx;
++        *y = tinfo->pos[stack];
++        *w = zw;
++        *h = tinfo->size[stack];
++    } else {
++        *x = tinfo->pos[stack];
++        *y = zy;
++        *w = tinfo->size[stack];
++        *h = zh;
++    }
++}
++
++/* The visible tab of a stack: the focused window if it is in there,
++ * otherwise the one that was focused last. */
++static E_Border *
++_tab_active_get(Eina_List *stack)
++{
++    E_Border *focused = e_border_focused_get(), *bd, *first = NULL;
++    Eina_List *l;
++
++    EINA_LIST_FOREACH(stack, l, bd) {
++        Border_Extra *extra;
++
++        if (bd == focused)
++            return bd;
++        extra = eina_hash_find(_G.border_extras, &bd);
++        if (extra && extra->tab_active && !first)
++            first = bd;
++    }
++    return first ? first : eina_list_data_get(stack);
++}
++
++static void
++_tab_active_set(int stack, E_Border *active)
++{
++    Eina_List *l;
++    E_Border *bd;
++
++    EINA_LIST_FOREACH(_G.tinfo->stacks[stack], l, bd) {
++        Border_Extra *extra = eina_hash_find(_G.border_extras, &bd);
++
++        if (extra)
++            extra->tab_active = (bd == active);
++    }
++}
++
++static void
++_tab_focus(E_Border *bd)
++{
++    if (bd->iconic)
++        e_border_uniconify(bd);
++    e_border_raise(bd);
++    e_border_focus_set(bd, 1, 1);
++}
++
++/* Next/previous visible tab inside one stack, wrapping around. */
++static void
++_tab_step_stack(int stack, int dir)
++{
++    Eina_List *l, *vis = NULL;
++    E_Border *bd, *cur, *next = NULL;
++    int n, idx = -1;
++
++    cur = _tab_active_get(_G.tinfo->stacks[stack]);
++    EINA_LIST_FOREACH(_G.tinfo->stacks[stack], l, bd) {
++        if (bd->iconic)
++            continue;
++        if (bd == cur)
++            idx = eina_list_count(vis);
++        vis = eina_list_append(vis, bd);
++    }
++    n = eina_list_count(vis);
++    if (n > 1 && idx >= 0)
++        next = eina_list_nth(vis, (((idx + dir) % n) + n) % n);
++    eina_list_free(vis);
++
++    if (next && next != cur)
++        _tab_focus(next);
++}
++
++/* Like i3's "focus left/right" inside a tabbed container: step through the
++ * tabs of the focused stack, then carry on into the next stack (landing on
++ * its visible tab). On desks that are not tabbed, or when the focus is not
++ * on a tiled window, behave like the taskbar-order action so that gesture
++ * bindings keep working everywhere. */
++static void
++_tab_focus_step(int dir)
++{
++    E_Desk *desk = get_current_desk();
++    E_Border *cur = e_border_focused_get();
++    E_Action *act;
++
++    check_tinfo(desk);
++    if (_G.tinfo->conf && _G.tinfo->conf->tabbed && cur
++        && (get_stack(cur) >= 0)) {
++        Eina_List *l, *all = NULL;
++        E_Border *bd, *next;
++        int i, n, idx = -1, cs = get_stack(cur);
++
++        for (i = 0; i < TILING_MAX_STACKS; i++) {
++            EINA_LIST_FOREACH(_G.tinfo->stacks[i], l, bd) {
++                if (bd->iconic)
++                    continue;
++                if (bd == cur)
++                    idx = eina_list_count(all);
++                all = eina_list_append(all, bd);
++            }
++        }
++        n = eina_list_count(all);
++        if (n > 1 && idx >= 0) {
++            next = eina_list_nth(all, (((idx + dir) % n) + n) % n);
++            if (get_stack(next) != cs)
++                next = _tab_active_get(_G.tinfo->stacks[get_stack(next)]);
++            eina_list_free(all);
++            if (next && next != cur)
++                _tab_focus(next);
++            return;
++        }
++        eina_list_free(all);
++    }
++
++    act = e_action_find((dir > 0) ? "tasks_focus_next" : "tasks_focus_prev");
++    if (act && act->func.go)
++        act->func.go(E_OBJECT(e_util_zone_current_get(e_manager_current_get())),
++                     NULL);
++}
++
++static void
++_tab_bar_clear(Tab_Bar *bar)
++{
++    Tab_Item *it;
++
++    EINA_LIST_FREE(bar->items, it) {
++        evas_object_del(it->label);
++        evas_object_del(it->clip);
++        evas_object_del(it->fill);
++        evas_object_del(it->frame);
++        free(it);
++    }
++}
++
++static void
++_tab_bar_hide(Tab_Bar *bar)
++{
++    if (!bar)
++        return;
++    _tab_bar_clear(bar);
++    bar->active = NULL;
++    if (bar->popup)
++        e_popup_hide(bar->popup);
++}
++
++static void
++_tab_bar_free(Tab_Bar *bar)
++{
++    if (!bar)
++        return;
++    _tab_bar_clear(bar);
++    if (bar->popup)
++        e_object_del(E_OBJECT(bar->popup));
++    free(bar);
++}
++
++static void
++_tab_color_set(Evas_Object *o, int rgb)
++{
++    evas_object_color_set(o, (rgb >> 16) & 0xff, (rgb >> 8) & 0xff,
++                          rgb & 0xff, 255);
++}
++
++static void
++_tab_cb_down(void *data, Evas *e __UNUSED__, Evas_Object *obj __UNUSED__,
++             void *event_info)
++{
++    Tab_Item *it = data;
++    Evas_Event_Mouse_Down *ev = event_info;
++
++    if (ev->button != 1)
++        return;
++    if (!eina_hash_find(_G.border_extras, &it->bd))
++        return;
++    _tab_focus(it->bd);
++}
++
++/* scrolling over the bar switches tabs, like in i3 */
++static void
++_tab_cb_wheel(void *data, Evas *e __UNUSED__, Evas_Object *obj __UNUSED__,
++              void *event_info)
++{
++    Tab_Item *it = data;
++    Evas_Event_Mouse_Wheel *ev = event_info;
++    int stack;
++
++    if (!it->bd->desk || !eina_hash_find(_G.border_extras, &it->bd))
++        return;
++    check_tinfo(it->bd->desk);
++    stack = get_stack(it->bd);
++    if (stack < 0)
++        return;
++    _tab_step_stack(stack, (ev->z > 0) ? 1 : -1);
++}
++
++static void
++_tab_bar_draw(Tab_Bar *bar, Eina_List *stack, int w, int h)
++{
++    Evas *evas = bar->popup->evas;
++    E_Border *focused = e_border_focused_get(), *bd;
++    Eina_List *l;
++    int n = eina_list_count(stack), i = 0;
++    int fs = MAX((int)(TILING_TAB_FONT * e_scale), 6);
++    int pad = (int)(TILING_TAB_PAD * e_scale);
++
++    _tab_bar_clear(bar);
++
++    EINA_LIST_FOREACH(stack, l, bd) {
++        Tab_Item *it;
++        const char *title;
++        int state, tx, tw, th;
++
++        /* equal widths, the last tab takes the rounding remainder */
++        tw = w / n;
++        tx = i * tw;
++        if (i == (n - 1))
++            tw = w - tx;
++        i++;
++
++        it = E_NEW(Tab_Item, 1);
++        if (!it)
++            continue;
++        it->bd = bd;
++
++        if (bd != focused && bd->client.icccm.urgent)
++            state = TAB_URGENT;
++        else if (bd == focused)
++            state = TAB_FOCUSED;
++        else if (bd == bar->active)
++            state = TAB_ACTIVE;
++        else
++            state = TAB_UNFOCUSED;
++
++        it->frame = evas_object_rectangle_add(evas);
++        _tab_color_set(it->frame, _tab_colors[state].border);
++        evas_object_move(it->frame, tx, 0);
++        evas_object_resize(it->frame, tw, h);
++        evas_object_event_callback_add(it->frame, EVAS_CALLBACK_MOUSE_DOWN,
++                                       _tab_cb_down, it);
++        evas_object_event_callback_add(it->frame, EVAS_CALLBACK_MOUSE_WHEEL,
++                                       _tab_cb_wheel, it);
++        evas_object_show(it->frame);
++
++        it->fill = evas_object_rectangle_add(evas);
++        _tab_color_set(it->fill, _tab_colors[state].fill);
++        evas_object_move(it->fill, tx + 1, 1);
++        evas_object_resize(it->fill, MAX(tw - 2, 1), MAX(h - 2, 1));
++        evas_object_pass_events_set(it->fill, 1);
++        evas_object_show(it->fill);
++
++        it->clip = evas_object_rectangle_add(evas);
++        evas_object_color_set(it->clip, 255, 255, 255, 255);
++        evas_object_move(it->clip, tx + pad, 1);
++        evas_object_resize(it->clip, MAX(tw - (2 * pad), 1), MAX(h - 2, 1));
++        evas_object_pass_events_set(it->clip, 1);
++        evas_object_show(it->clip);
++
++        title = e_border_name_get(bd);
++        it->label = evas_object_text_add(evas);
++        evas_object_text_style_set(it->label, EVAS_TEXT_STYLE_PLAIN);
++        evas_object_text_font_set(it->label, TILING_TAB_FONT_NAME, fs);
++        evas_object_text_text_set(it->label, title ? title : "");
++        _tab_color_set(it->label, _tab_colors[state].text);
++        evas_object_geometry_get(it->label, NULL, NULL, NULL, &th);
++        evas_object_move(it->label, tx + pad, (h - th) / 2);
++        evas_object_clip_set(it->label, it->clip);
++        evas_object_pass_events_set(it->label, 1);
++        evas_object_show(it->label);
++
++        bar->items = eina_list_append(bar->items, it);
++    }
++}
++
++static void
++_tabs_refresh_tinfo(Tiling_Info *tinfo)
++{
++    Eina_Bool shown;
++    int i, bh = _tab_bar_height();
++
++    shown = tinfo->desk
++        && (e_desk_current_get(tinfo->desk->zone) == tinfo->desk);
++
++    for (i = 0; i < TILING_MAX_STACKS; i++) {
++        Tab_Bar *bar = tinfo->bars[i];
++        E_Zone *zone;
++        E_Border *active;
++        int x, y, w, h;
++
++        if (!shown || !_tab_stack_is_tabbed(tinfo, i)) {
++            _tab_bar_hide(bar);
++            continue;
++        }
++
++        zone = tinfo->desk->zone;
++        _tab_stack_rect(tinfo, i, &x, &y, &w, &h);
++        if (w < 1) {
++            _tab_bar_hide(bar);
++            continue;
++        }
++
++        if (!bar) {
++            bar = E_NEW(Tab_Bar, 1);
++            if (!bar)
++                continue;
++            tinfo->bars[i] = bar;
++        }
++        if (!bar->popup) {
++            bar->popup = e_popup_new(zone, x - zone->x, y - zone->y, w, bh);
++            if (!bar->popup)
++                continue;
++            e_popup_name_set(bar->popup, "tiling_tabs");
++            e_popup_layer_set(bar->popup, E_LAYER_BELOW);
++        }
++        e_popup_move_resize(bar->popup, x - zone->x, y - zone->y, w, bh);
++
++        active = _tab_active_get(tinfo->stacks[i]);
++        if (active && bar->active != active)
++            e_border_raise(active);
++        bar->active = active;
++
++        _tab_bar_draw(bar, tinfo->stacks[i], w, bh);
++        e_popup_show(bar->popup);
++    }
++}
++
++static Eina_Bool
++_tabs_foreach_cb(const Eina_Hash *hash __UNUSED__, const void *key __UNUSED__,
++                 void *data, void *fdata __UNUSED__)
++{
++    _tabs_refresh_tinfo(data);
++
++    return true;
++}
++
++static void
++_tabs_job_cb(void *data __UNUSED__)
++{
++    _G.tabs_job = NULL;
++    if (!_G.info_hash)
++        return;
++    eina_hash_foreach(_G.info_hash, _tabs_foreach_cb, NULL);
++}
++
++/* Everything that changes the tabs (layout, focus, titles, desk switch)
++ * only asks for a redraw, which then happens once per main loop iteration. */
++static void
++_tabs_schedule(void)
++{
++    if (_G.tabs_job)
++        return;
++    _G.tabs_job = ecore_job_add(_tabs_job_cb, NULL);
++}
++
++/* All windows of a tabbed stack share the stack's area, minus the tab bar
++ * on top. Only the raised one is visible. */
++static void
++_reorganize_stack_tabbed(int stack)
++{
++    Eina_List *l;
++    int sx, sy, sw, sh, bh = _tab_bar_height();
++
++    _tab_stack_rect(_G.tinfo, stack, &sx, &sy, &sw, &sh);
++
++    for (l = _G.tinfo->stacks[stack]; l; l = l->next) {
++        E_Border *bd = l->data;
++        Border_Extra *extra;
++
++        extra = eina_hash_find(_G.border_extras, &bd);
++        if (!extra) {
++            ERR("No extra for %p", bd);
++            continue;
++        }
++
++        if (bd->maximized)
++            _e_border_unmaximize(bd, E_MAXIMIZE_BOTH);
++
++        extra->expected.x = sx;
++        extra->expected.y = sy + bh;
++        extra->expected.w = sw;
++        extra->expected.h = MAX(sh - bh, 1);
++
++        _e_border_move_resize(bd,
++                              extra->expected.x,
++                              extra->expected.y,
++                              extra->expected.w,
++                              extra->expected.h);
++    }
++
++    _tabs_schedule();
++}
++
++static Eina_Bool
++_tab_focus_hook(void *data __UNUSED__, int type,
++                E_Event_Border_Focus_In *ev)
++{
++    E_Border *bd = ev->border;
++    int stack;
++
++    if (!bd || !bd->desk)
++        return true;
++
++    check_tinfo(bd->desk);
++    if (!_G.tinfo->conf || !_G.tinfo->conf->tabbed)
++        return true;
++
++    stack = get_stack(bd);
++    if (stack < 0)
++        return true;
++
++    if (type == E_EVENT_BORDER_FOCUS_IN)
++        _tab_active_set(stack, bd);
++    _tabs_schedule();
++
++    return true;
++}
++
++/* titles and urgency live in the border properties */
++static Eina_Bool
++_tab_property_hook(void *data __UNUSED__, int type __UNUSED__,
++                   E_Event_Border_Property *ev)
++{
++    E_Border *bd = ev->border;
++
++    if (!bd || !bd->desk)
++        return true;
++    if (!eina_hash_find(_G.border_extras, &bd))
++        return true;
++
++    check_tinfo(bd->desk);
++    if (_G.tinfo->conf && _G.tinfo->conf->tabbed && (get_stack(bd) >= 0))
++        _tabs_schedule();
++
++    return true;
++}
++
++/* }}} */
+ /* Reorganize Stacks {{{*/
+ 
+ static void
+@@ -722,6 +1234,13 @@
+         || !_G.tinfo->stacks[stack])
+         return;
+ 
++    _tabs_schedule();
++
++    if (_G.tinfo->conf->tabbed && _G.tinfo->stacks[stack]->next) {
++        _reorganize_stack_tabbed(stack);
++        return;
++    }
++
+     if (_G.tinfo->stacks[stack]->next) {
+         int zx, zy, zw, zh, i = 0, count;
+ 
+@@ -860,6 +1379,13 @@
+     Eina_List *list = _G.tinfo->stacks[stack];
+     Eina_List *l;
+ 
++    if (_G.tinfo->conf->tabbed && list && list->next) {
++        _G.tinfo->pos[stack] += delta_pos;
++        _G.tinfo->size[stack] += delta_size;
++        _reorganize_stack_tabbed(stack);
++        return;
++    }
++
+     for (l = list; l; l = l->next) {
+         E_Border *bd = l->data;
+         Border_Extra *extra;
+@@ -893,6 +1419,15 @@
+ _set_stack_geometry(int stack, int pos, int size)
+ {
+     Eina_List *l;
++
++    if (_G.tinfo->conf->tabbed && _G.tinfo->stacks[stack]
++        && _G.tinfo->stacks[stack]->next) {
++        _G.tinfo->pos[stack] = pos;
++        _G.tinfo->size[stack] = size;
++        _reorganize_stack_tabbed(stack);
++        return;
++    }
++
+     for (l = _G.tinfo->stacks[stack]; l; l = l->next) {
+         E_Border *bd = l->data;
+         Border_Extra *extra;
+@@ -1226,6 +1761,46 @@
+     e_config_save_queue();
+ }
+ 
++static void
++_e_mod_action_toggle_tabbed_cb(E_Object   *obj __UNUSED__,
++                               const char *params __UNUSED__)
++{
++    E_Desk *desk = get_current_desk();
++    int i;
++
++    end_special_input();
++
++    check_tinfo(desk);
++    if (!_G.tinfo->conf || !_G.tinfo->conf->nb_stacks)
++        return;
++
++    _G.tinfo->conf->tabbed = !_G.tinfo->conf->tabbed;
++    for (i = 0; i < TILING_MAX_STACKS; i++) {
++        _reorganize_stack(i);
++    }
++    _tabs_schedule();
++
++    e_config_save_queue();
++}
++
++static void
++_e_mod_action_tab_next_cb(E_Object   *obj __UNUSED__,
++                          const char *params __UNUSED__)
++{
++    end_special_input();
++
++    _tab_focus_step(1);
++}
++
++static void
++_e_mod_action_tab_prev_cb(E_Object   *obj __UNUSED__,
++                          const char *params __UNUSED__)
++{
++    end_special_input();
++
++    _tab_focus_step(-1);
++}
++
+ 
+ /* }}} */
+ /* Reorganize windows {{{*/
+@@ -1503,6 +2078,17 @@
+ {
+     Eina_List *l;
+ 
++    if (_G.tinfo->conf->tabbed && _G.tinfo->stacks[stack]
++        && _G.tinfo->stacks[stack]->next) {
++        /* tabs always fill their stack: undo the change */
++        _e_border_move_resize(bd,
++                              extra->expected.x,
++                              extra->expected.y,
++                              extra->expected.w,
++                              extra->expected.h);
++        return;
++    }
++
+     l = eina_list_data_find_list(_G.tinfo->stacks[stack], bd);
+     if (!l) {
+         ERR("unable to bd %p in stack %d", bd, stack);
+@@ -3943,6 +4529,7 @@
+     _G.currently_switching_desktop = 0;
+ 
+     end_special_input();
++    _tabs_schedule();
+ 
+     return true;
+ }
+@@ -4114,6 +4701,8 @@
+     for (i = 0; i < TILING_MAX_STACKS; i++) {
+         eina_list_free(ti->stacks[i]);
+         ti->stacks[i] = NULL;
++        _tab_bar_free(ti->bars[i]);
++        ti->bars[i] = NULL;
+     }
+     E_FREE(ti);
+ }
+@@ -4201,6 +4790,9 @@
+     HANDLER(_G.handler_desk_set, BORDER_DESK_SET, (void *) _desk_set_hook);
+     HANDLER(_G.handler_container_resize, CONTAINER_RESIZE, (void *) _container_resize_hook);
+     HANDLER(_G.handler_icon_change, CONFIG_ICON_THEME, (void *) _register_conf_item);
++    HANDLER(_G.handler_focus_in, BORDER_FOCUS_IN, _tab_focus_hook);
++    HANDLER(_G.handler_focus_out, BORDER_FOCUS_OUT, _tab_focus_hook);
++    HANDLER(_G.handler_property, BORDER_PROPERTY, _tab_property_hook);
+ #undef HANDLER
+ 
+ #define ACTION_ADD(_act, _cb, _title, _value, _params, _example, _editable)  \
+@@ -4266,6 +4858,16 @@
+     ACTION_ADD(_G.act_send_sw, _e_mod_action_send_cb,
+                N_("Send to lower left corner"), "send_sw",
+                "sw", NULL, 0);
++
++    ACTION_ADD(_G.act_toggle_tabbed, _e_mod_action_toggle_tabbed_cb,
++               N_("Toggle tabbed layout"), "toggle_tabbed",
++               NULL, NULL, 0);
++    ACTION_ADD(_G.act_tab_next, _e_mod_action_tab_next_cb,
++               N_("Focus next tab (or window)"), "tab_next",
++               NULL, NULL, 0);
++    ACTION_ADD(_G.act_tab_prev, _e_mod_action_tab_prev_cb,
++               N_("Focus previous tab (or window)"), "tab_prev",
++               NULL, NULL, 0);
+ #undef ACTION_ADD
+ 
+     /* Configuration entries */
+@@ -4285,6 +4887,7 @@
+     E_CONFIG_VAL(_G.vdesk_edd, struct _Config_vdesk, zone_num, INT);
+     E_CONFIG_VAL(_G.vdesk_edd, struct _Config_vdesk, nb_stacks, INT);
+     E_CONFIG_VAL(_G.vdesk_edd, struct _Config_vdesk, use_rows, INT);
++    E_CONFIG_VAL(_G.vdesk_edd, struct _Config_vdesk, tabbed, INT);
+ 
+     tiling_g.config = e_config_domain_load("module.tiling", _G.config_edd);
+     if (!tiling_g.config) {
+@@ -4307,6 +4910,7 @@
+ 
+         E_CONFIG_LIMIT(vd->nb_stacks, 0, TILING_MAX_STACKS);
+         E_CONFIG_LIMIT(vd->use_rows, 0, 1);
++        E_CONFIG_LIMIT(vd->tabbed, 0, 1);
+     }
+     
+     _G.border_menu_hook = e_int_border_menu_hook_add(_bd_hook, NULL);
+@@ -4376,6 +4980,11 @@
+ {
+     _disable_all_tiling();
+ 
++    if (_G.tabs_job) {
++        ecore_job_del(_G.tabs_job);
++        _G.tabs_job = NULL;
++    }
++
+     if (tiling_g.log_domain >= 0) {
+         eina_log_domain_unregister(tiling_g.log_domain);
+         tiling_g.log_domain = -1;
+@@ -4407,6 +5016,9 @@
+     FREE_HANDLER(_G.handler_desk_before_show);
+     FREE_HANDLER(_G.handler_desk_set);
+     FREE_HANDLER(_G.handler_icon_change);
++    FREE_HANDLER(_G.handler_focus_in);
++    FREE_HANDLER(_G.handler_focus_out);
++    FREE_HANDLER(_G.handler_property);
+ #undef FREE_HANDLER
+ 
+ 
+@@ -4436,6 +5048,10 @@
+     ACTION_DEL(_G.act_send_nw, "Send to upper left corner", "send_nw");
+     ACTION_DEL(_G.act_send_se, "Send to lower right corner", "send_se");
+     ACTION_DEL(_G.act_send_sw, "Send to lower left corner", "send_sw");
++
++    ACTION_DEL(_G.act_toggle_tabbed, "Toggle tabbed layout", "toggle_tabbed");
++    ACTION_DEL(_G.act_tab_next, "Focus next tab (or window)", "tab_next");
++    ACTION_DEL(_G.act_tab_prev, "Focus previous tab (or window)", "tab_prev");
+ #undef ACTION_DEL
+ 
+     e_configure_registry_item_del("windows/tiling");
+diff -urN a/src/modules/tiling/e_mod_tiling.h b/src/modules/tiling/e_mod_tiling.h
+--- a/src/modules/tiling/e_mod_tiling.h
++++ b/src/modules/tiling/e_mod_tiling.h
+@@ -19,6 +19,7 @@
+ 
+ typedef struct _Config      Config;
+ typedef struct _Tiling_Info Tiling_Info;
++typedef struct _Tab_Bar     Tab_Bar;
+ 
+ struct tiling_g
+ {
+@@ -42,6 +43,7 @@
+    unsigned int  zone_num;
+    int           nb_stacks;
+    int           use_rows;
++   int           tabbed;
+ };
+ 
+ struct _Config
+@@ -67,6 +69,9 @@
+     Eina_List *stacks[TILING_MAX_STACKS];
+     int        pos[TILING_MAX_STACKS];
+     int        size[TILING_MAX_STACKS];
++
++    /* Tab bars, one per stack, only used when conf->tabbed is set */
++    Tab_Bar   *bars[TILING_MAX_STACKS];
+ };
+ 
+ struct _E_Config_Dialog_Data
+diff -urN a/src/modules/tpgest/e_mod_config.c b/src/modules/tpgest/e_mod_config.c
+--- a/src/modules/tpgest/e_mod_config.c
++++ b/src/modules/tpgest/e_mod_config.c
+@@ -8,11 +8,11 @@
+ } Gesture_Def;
+ 
+ /* action list groups */
+-enum { GRP_DESKTOP, GRP_TASKBAR, GRP_WINDOW, GRP_MENU, GRP_OTHER, GRP_LAST };
++enum { GRP_DESKTOP, GRP_TASKBAR, GRP_TILING, GRP_WINDOW, GRP_MENU, GRP_OTHER, GRP_LAST };
+ 
+ static const char *_group_names[GRP_LAST] =
+ {
+-   N_("Desktop"), N_("Taskbar order"), N_("Window"), N_("Menus"), N_("Other")
++   N_("Desktop"), N_("Taskbar order"), N_("Tiling"), N_("Window"), N_("Menus"), N_("Other")
+ };
+ 
+ typedef struct
+@@ -57,6 +57,9 @@
+    { N_("Send to Next Desktop"),       "window_desk_move_by",     "1 0",  GRP_WINDOW },
+    { N_("Focus Right Window"),         "tasks_focus_next",        NULL,   GRP_TASKBAR },
+    { N_("Focus Left Window"),          "tasks_focus_prev",        NULL,   GRP_TASKBAR },
++   { N_("Next Tab / Window"),          "tab_next",                NULL,   GRP_TILING },
++   { N_("Previous Tab / Window"),      "tab_prev",                NULL,   GRP_TILING },
++   { N_("Toggle Tabbed Layout"),       "toggle_tabbed",           NULL,   GRP_TILING },
+    { N_("Run Command"),                "exec",                    NULL,   GRP_OTHER }
+ };
+ #define N_PRESETS ((int)(sizeof(_presets) / sizeof(_presets[0])))
+diff -urN a/src/modules/tpgest/e_mod_gesture.c b/src/modules/tpgest/e_mod_gesture.c
+--- a/src/modules/tpgest/e_mod_gesture.c
++++ b/src/modules/tpgest/e_mod_gesture.c
+@@ -71,6 +71,11 @@
+    b = tpg_binding_find(type, fingers, dir);
+    if ((!b) || (!b->action) || (!b->action[0])) return;
+    act = e_action_find(b->action);
++   /* without the tiling module keep plain taskbar-order focus */
++   if ((!act) && (!strcmp(b->action, "tab_next")))
++     act = e_action_find("tasks_focus_next");
++   else if ((!act) && (!strcmp(b->action, "tab_prev")))
++     act = e_action_find("tasks_focus_prev");
+    if ((!act) || (!act->func.go)) return;
+    act->func.go(E_OBJECT(e_util_zone_current_get(e_manager_current_get())),
+                 b->params);
+diff -urN a/src/modules/tpgest/e_mod_main.c b/src/modules/tpgest/e_mod_main.c
+--- a/src/modules/tpgest/e_mod_main.c
++++ b/src/modules/tpgest/e_mod_main.c
+@@ -47,7 +47,7 @@
+    e_config_domain_save("module.tpgest", conf_edd, tpg_config);
+ }
+ 
+-#define TPG_CONFIG_VERSION 2
++#define TPG_CONFIG_VERSION 3
+ 
+ static void
+ _reset_bindings(void)
+@@ -65,8 +65,8 @@
+ static void
+ _defaults(void)
+ {
+-   tpg_binding_set(TPG_SWIPE, 3, TPG_LEFT,  "tasks_focus_next", NULL);
+-   tpg_binding_set(TPG_SWIPE, 3, TPG_RIGHT, "tasks_focus_prev", NULL);
++   tpg_binding_set(TPG_SWIPE, 3, TPG_LEFT,  "tab_next", NULL);
++   tpg_binding_set(TPG_SWIPE, 3, TPG_RIGHT, "tab_prev", NULL);
+    tpg_binding_set(TPG_SWIPE, 3, TPG_UP,    "menu_show", "main");
+    tpg_binding_set(TPG_SWIPE, 3, TPG_DOWN,  "desk_deskshow_toggle", NULL);
+    /* natural scrolling: swiping left reveals the desktop on the right */
+@@ -76,6 +76,21 @@
+    tpg_binding_set(TPG_SWIPE, 4, TPG_DOWN,  "window_iconic_toggle", NULL);
+ }
+ 
++/* v2 -> v3: the 3 finger left/right swipes move to the tiling module's
++ * tab-aware focus actions. Only untouched default bindings are changed. */
++static void
++_migrate_v2(void)
++{
++   Tpg_Binding *b;
++
++   b = tpg_binding_find(TPG_SWIPE, 3, TPG_LEFT);
++   if (b && b->action && (!strcmp(b->action, "tasks_focus_next")))
++     tpg_binding_set(TPG_SWIPE, 3, TPG_LEFT, "tab_next", NULL);
++   b = tpg_binding_find(TPG_SWIPE, 3, TPG_RIGHT);
++   if (b && b->action && (!strcmp(b->action, "tasks_focus_prev")))
++     tpg_binding_set(TPG_SWIPE, 3, TPG_RIGHT, "tab_prev", NULL);
++}
++
+ EAPI void *
+ e_modapi_init(E_Module *m)
+ {
+@@ -115,8 +130,13 @@
+      }
+    if (tpg_config->version < TPG_CONFIG_VERSION)
+      {
+-        _reset_bindings();
+-        _defaults();
++        if (tpg_config->version < 2)
++          {
++             _reset_bindings();
++             _defaults();
++          }
++        else
++          _migrate_v2();
+         tpg_config->version = TPG_CONFIG_VERSION;
+         tpg_config_save();
+      }
