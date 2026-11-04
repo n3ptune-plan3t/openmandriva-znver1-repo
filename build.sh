@@ -420,6 +420,11 @@ fi
 # binary blob to the repo. Any future Rust package that follows
 # the same Source1 naming convention picks this up automatically
 # — nothing here is specific to one package name.
+#
+# The crate normally sits at the tarball root. If there is no
+# Cargo.toml there (e.g. yami keeps its workspace in shell/),
+# the first subdirectory holding one is vendored instead; the
+# resulting tarball still has a top-level "vendor/" directory.
 # ============================================================
 
 VENDOR_LINE=$(grep -E '^Source1:' "$ABF/$PKG.spec" || true)
@@ -458,6 +463,9 @@ if printf '%s' "$VENDOR_LINE" | grep -q -- '-vendor\.tar\.xz$'; then
             sed -E 's/^Patch[0-9]+:[[:space:]]*//'
         )
 
+        # CHANGED: find the directory that holds Cargo.toml (root by
+        # default, otherwise the first subdirectory), cd into it before
+        # `cargo vendor`, and write the tarball to an absolute path.
         su builder -c "
             set -eu
             cd '$ABF'
@@ -470,10 +478,20 @@ if printf '%s' "$VENDOR_LINE" | grep -q -- '-vendor\.tar\.xz$'; then
                 echo \"==> Applying \$p before vendoring\"
                 patch -p1 < \"../\$p\"
             done
+            vdir=.
+            if [ ! -f Cargo.toml ]; then
+                vdir=\$(find . -mindepth 2 -maxdepth 2 -name Cargo.toml | sort | head -n1 | xargs -r dirname)
+                if [ -z \"\$vdir\" ]; then
+                    echo \"ERROR: no Cargo.toml found in the source tarball\" >&2
+                    exit 1
+                fi
+                echo \"==> Cargo.toml is not at the tarball root, vendoring in \$vdir\"
+            fi
+            cd \"\$vdir\"
             mkdir -p .cargo
             cargo vendor vendor > .cargo/config-vendor.toml
             gtar --sort=name --owner=0 --group=0 --numeric-owner \
-                -cJf '../$VENDOR_FILE' vendor
+                -cJf '$ABF/$VENDOR_FILE' vendor
         "
 
         rm -f "$ABF/$SRC_TARBALL"
