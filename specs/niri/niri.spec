@@ -3,17 +3,17 @@
 %bcond_with test
 Name:           niri
 Version:        26.04
-Release:        5
+Release:        6
 Summary:        Scrollable-tiling Wayland compositor
 License:        GPL-3.0-or-later
 URL:            https://github.com/YaLTeR/niri
 Source0:        %{url}/archive/v%{version}/%{name}-%{version}.tar.gz
 Source1:        %{url}/releases/download/v%{version}/niri-%{version}-vendored-dependencies.tar.xz
 Source2:        cargo_config
-Patch0:         niri-low-power-frame-callbacks.patch
-Patch1:         niri-no-xray-when-blur-off.patch
-Patch2:         niri-idle-texture-cache-cleanup.patch
-Patch3:         niri-touchpad-gesture-fixes.patch
+#Patch0:         niri-low-power-frame-callbacks.patch
+#Patch1:         niri-no-xray-when-blur-off.patch
+#Patch2:         niri-idle-texture-cache-cleanup.patch
+#Patch3:         niri-touchpad-gesture-fixes.patch
 
 BuildRequires:  rust-packaging
 BuildRequires:  clang
