@@ -5,7 +5,7 @@ Summary:        Frutiger Aero Qt6 widget style (and QQC2 style) for KDE
 License:        MIT
 Group:          Graphical desktop/KDE
 URL:            https://github.com/n3ptune-plan3t/aeroqt
-Source0:        aeroqt-%{version}.tar.gz
+Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 
 BuildRequires:  cmake
 BuildRequires:  ninja
