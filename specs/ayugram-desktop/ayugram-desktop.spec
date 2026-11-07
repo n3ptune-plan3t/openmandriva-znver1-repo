@@ -1,6 +1,8 @@
 %global appname AyuGramDesktop
+%global _disable_lto 1
 %global shimdir %{_builddir}/%{name}-%{version}-shim
 %global optflags %{optflags} -I%{shimdir}
+%global optflags %(echo %{optflags} | sed -e 's/-flto[^ ]*//g')
 
 Name:           ayugram-desktop
 Version:        7.2.9
@@ -18,6 +20,8 @@ BuildOption:    -DDESKTOP_APP_DISABLE_AUTOUPDATE:BOOL=ON
 BuildOption:    -DDESKTOP_APP_DISABLE_CRASH_REPORTS:BOOL=ON
 BuildOption:    -DDESKTOP_APP_USE_PACKAGED:BOOL=ON
 BuildOption:    -DDESKTOP_APP_USE_PACKAGED_FONTS:BOOL=ON
+BuildOption:    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION:BOOL=OFF
+BuildOption:    -DDESKTOP_APP_LTO:BOOL=OFF
 BuildOption:    -DDESKTOP_APP_DISABLE_WAYLAND_INTEGRATION:BOOL=OFF
 BuildOption:    -DDESKTOP_APP_DISABLE_X11_INTEGRATION:BOOL=OFF
 
