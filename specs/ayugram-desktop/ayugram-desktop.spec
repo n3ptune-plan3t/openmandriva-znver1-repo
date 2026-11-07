@@ -3,12 +3,14 @@
 %global shimdir %{_builddir}/%{name}-%{version}-shim
 %global optflags %{optflags} -I%{shimdir}
 %global optflags %(echo %{optflags} | sed -e 's/-flto[^ ]*//g')
+%global _debuginfo_subpackages 0
+%global debug_package %{nil}.
 
 Name:           ayugram-desktop
 Version:        7.2.9
 Release:        1
 Summary:        Telegram Desktop fork with Ghost mode and message history
-License:        GPL-3.0-or-later WITH OpenSSL-exception
+License:        GPL-3.0-or-later WITH openvpn-openssl-exception
 Group:          Networking/Instant messaging
 URL:            https://github.com/AyuGram/AyuGramDesktop
 Source0:        %{url}/releases/download/v%{version}/%{appname}-%{version}-full.tar.gz#/%{name}-%{version}-full.tar.gz
