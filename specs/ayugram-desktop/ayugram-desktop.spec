@@ -89,6 +89,8 @@ BuildRequires:  pkgconfig(zlib)
 BuildRequires:  lib64qrcodegencpp-devel
 BuildRequires:  lib64boost-devel
 BuildRequires:  lib64dispatch-devel
+BuildRequires:  lib64openal-devel
+BuildRequires:  lib64z-ng-static-devel
 
 Requires:       hicolor-icon-theme
 Requires:       qt6-qtimageformats
