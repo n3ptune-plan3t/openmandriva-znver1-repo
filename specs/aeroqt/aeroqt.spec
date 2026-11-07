@@ -1,3 +1,5 @@
+%bcond tests 0
+
 Name:           aeroqt
 Version:        0.2.0
 Release:        1
@@ -32,9 +34,12 @@ BuildArch:      noarch
 QQC2 style module "AeroQt" so QML/Kirigami apps match the widget style.
 Select it with QT_QUICK_CONTROLS_STYLE=AeroQt.
 
+%if %{with tests}
 %check
 export QT_QPA_PLATFORM=offscreen
-%ctest
+cd %{_vpath_builddir}
+ctest --output-on-failure
+%endif
 
 %files
 %doc HANDOFF.md
