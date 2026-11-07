@@ -87,6 +87,8 @@ BuildRequires:  pkgconfig(xcb-record)
 BuildRequires:  pkgconfig(xcb-screensaver)
 BuildRequires:  pkgconfig(zlib)
 BuildRequires:  lib64qrcodegencpp-devel
+BuildRequires:  lib64boost-devel
+BuildRequires:  lib64dispatch-devel
 
 Requires:       hicolor-icon-theme
 Requires:       qt6-qtimageformats
@@ -99,8 +101,7 @@ Recommends:     lib64webkit2gtk6.0
 %description
 AyuGram is a Telegram Desktop fork with Ghost mode, local message history
 (including deleted messages), message filters, translation and extra
-interface customization. Use at your own risk: third-party clients may
-violate Telegram's terms.
+interface customization.
 
 %prep
 %autosetup -p1 -n %{appname}-%{version}-full
