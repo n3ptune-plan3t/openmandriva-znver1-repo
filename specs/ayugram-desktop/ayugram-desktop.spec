@@ -58,6 +58,7 @@ BuildRequires:  cmake(range-v3)
 BuildRequires:  cmake(tg_owt)
 BuildRequires:  cmake(tde2e)
 BuildRequires:  cmake(tl-expected)
+BuildRequires:  cmake(VulkanHeaders)
 
 # Packages that must be named explicitly (virtual names resolve wrongly)
 BuildRequires:  lib64boost-devel
@@ -67,6 +68,9 @@ BuildRequires:  lib64z-ng-static-devel
 BuildRequires:  lib64qrcodegencpp-devel
 BuildRequires:  lib64gio-gir2.0
 BuildRequires:  lib64glib-gir2.0
+BuildRequires:  lib64lz4-static-devel
+BuildRequires:  qt6-qtbase-theme-gtk3
+BuildRequires:  tdlib-static
 
 # pkgconfig
 BuildRequires:  pkgconfig(alsa)
@@ -109,6 +113,7 @@ BuildRequires:  pkgconfig(protobuf-lite)
 BuildRequires:  pkgconfig(rnnoise)
 BuildRequires:  pkgconfig(tlottie)
 BuildRequires:  pkgconfig(vpx)
+BuildRequires:  pkgconfig(vulkan)
 BuildRequires:  pkgconfig(wayland-client)
 BuildRequires:  pkgconfig(xcb)
 BuildRequires:  pkgconfig(xcb-keysyms)
