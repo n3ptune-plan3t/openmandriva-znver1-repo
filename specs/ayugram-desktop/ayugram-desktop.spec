@@ -1,4 +1,6 @@
 %global appname AyuGramDesktop
+%global shimdir %{_builddir}/%{name}-%{version}-shim
+%global optflags %{optflags} -I%{shimdir}
 
 Name:           ayugram-desktop
 Version:        7.2.9
@@ -102,6 +104,7 @@ BuildRequires:  pkgconfig(libsrtp2)
 BuildRequires:  pkgconfig(libswresample)
 BuildRequires:  pkgconfig(libswscale)
 BuildRequires:  pkgconfig(libxxhash)
+BuildRequires:  pkgconfig(libyuv)
 BuildRequires:  pkgconfig(minizip)
 BuildRequires:  pkgconfig(openh264)
 BuildRequires:  pkgconfig(openssl)
@@ -137,6 +140,8 @@ violate Telegram's terms.
 
 %prep
 %autosetup -p1 -n %{appname}-%{version}-full
+mkdir -p %{shimdir}/third_party/libyuv/include
+echo '#include <libyuv.h>' > %{shimdir}/third_party/libyuv/include/libyuv.h
 
 %files
 %license LICENSE LEGAL
