@@ -1,5 +1,5 @@
 Name:           aeroqt
-Version:        0.1.0
+Version:        0.2.0
 Release:        1
 Summary:        Frutiger Aero Qt6 widget style (and QQC2 style) for KDE
 License:        MIT
