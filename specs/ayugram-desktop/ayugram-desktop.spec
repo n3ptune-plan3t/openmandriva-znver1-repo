@@ -19,6 +19,7 @@ BuildOption:    -DDESKTOP_APP_USE_PACKAGED_FONTS:BOOL=ON
 BuildOption:    -DDESKTOP_APP_DISABLE_WAYLAND_INTEGRATION:BOOL=OFF
 BuildOption:    -DDESKTOP_APP_DISABLE_X11_INTEGRATION:BOOL=OFF
 
+# Build tools
 BuildRequires:  cmake
 BuildRequires:  ninja
 BuildRequires:  clang
@@ -26,8 +27,10 @@ BuildRequires:  gperf
 BuildRequires:  python
 BuildRequires:  desktop-file-utils
 BuildRequires:  pkgconfig(appstream-glib)
-BuildRequires:  cmake(Microsoft.GSL)
-BuildRequires:  cmake(OpenAL)
+BuildRequires:  glib2.0-common
+BuildRequires:  gobject-introspection
+
+# Qt6
 BuildRequires:  cmake(Qt6Concurrent)
 BuildRequires:  cmake(Qt6Core)
 BuildRequires:  cmake(Qt6Core5Compat)
@@ -45,6 +48,9 @@ BuildRequires:  cmake(Qt6WaylandClientPrivate)
 BuildRequires:  cmake(Qt6Widgets)
 BuildRequires:  cmake(Qt6WidgetsPrivate)
 BuildRequires:  cmake(KF6CoreAddons)
+
+# C++ libraries (cmake config packages)
+BuildRequires:  cmake(Microsoft.GSL)
 BuildRequires:  cmake(absl)
 BuildRequires:  cmake(ada)
 BuildRequires:  cmake(fmt)
@@ -52,20 +58,38 @@ BuildRequires:  cmake(range-v3)
 BuildRequires:  cmake(tg_owt)
 BuildRequires:  cmake(tde2e)
 BuildRequires:  cmake(tl-expected)
+
+# Packages that must be named explicitly (virtual names resolve wrongly)
+BuildRequires:  lib64boost-devel
+BuildRequires:  lib64dispatch-devel
+BuildRequires:  lib64openal-devel
+BuildRequires:  lib64z-ng-static-devel
+BuildRequires:  lib64qrcodegencpp-devel
+
+# pkgconfig
 BuildRequires:  pkgconfig(alsa)
+BuildRequires:  pkgconfig(cairo)
+BuildRequires:  pkgconfig(fontconfig)
+BuildRequires:  pkgconfig(freetype2)
+BuildRequires:  pkgconfig(fribidi)
 BuildRequires:  pkgconfig(gio-2.0)
+BuildRequires:  pkgconfig(gio-unix-2.0)
 BuildRequires:  pkgconfig(glib-2.0)
 BuildRequires:  pkgconfig(glibmm-2.68)
 BuildRequires:  pkgconfig(gobject-2.0)
 BuildRequires:  pkgconfig(gobject-introspection-1.0)
+BuildRequires:  pkgconfig(harfbuzz)
 BuildRequires:  pkgconfig(hunspell)
 BuildRequires:  pkgconfig(libavcodec)
+BuildRequires:  pkgconfig(libavfilter)
 BuildRequires:  pkgconfig(libavformat)
 BuildRequires:  pkgconfig(libavutil)
 BuildRequires:  pkgconfig(libcmark-gfm)
 BuildRequires:  pkgconfig(libcrypto)
+BuildRequires:  pkgconfig(libfido2)
 BuildRequires:  pkgconfig(libjpeg)
 BuildRequires:  pkgconfig(liblz4)
+BuildRequires:  pkgconfig(liblzma)
 BuildRequires:  pkgconfig(libpipewire-0.3)
 BuildRequires:  pkgconfig(libpulse)
 BuildRequires:  pkgconfig(libsrtp2)
@@ -74,7 +98,10 @@ BuildRequires:  pkgconfig(libswscale)
 BuildRequires:  pkgconfig(libxxhash)
 BuildRequires:  pkgconfig(minizip)
 BuildRequires:  pkgconfig(openh264)
+BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(opus)
+BuildRequires:  pkgconfig(pango)
+BuildRequires:  pkgconfig(pangocairo)
 BuildRequires:  pkgconfig(protobuf)
 BuildRequires:  pkgconfig(protobuf-lite)
 BuildRequires:  pkgconfig(rnnoise)
@@ -86,11 +113,6 @@ BuildRequires:  pkgconfig(xcb-keysyms)
 BuildRequires:  pkgconfig(xcb-record)
 BuildRequires:  pkgconfig(xcb-screensaver)
 BuildRequires:  pkgconfig(zlib)
-BuildRequires:  lib64qrcodegencpp-devel
-BuildRequires:  lib64boost-devel
-BuildRequires:  lib64dispatch-devel
-BuildRequires:  lib64openal-devel
-BuildRequires:  lib64z-ng-static-devel
 
 Requires:       hicolor-icon-theme
 Requires:       qt6-qtimageformats
@@ -103,7 +125,8 @@ Recommends:     lib64webkit2gtk6.0
 %description
 AyuGram is a Telegram Desktop fork with Ghost mode, local message history
 (including deleted messages), message filters, translation and extra
-interface customization.
+interface customization. Use at your own risk: third-party clients may
+violate Telegram's terms.
 
 %prep
 %autosetup -p1 -n %{appname}-%{version}-full
