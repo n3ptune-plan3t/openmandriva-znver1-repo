@@ -65,6 +65,8 @@ BuildRequires:  lib64dispatch-devel
 BuildRequires:  lib64openal-devel
 BuildRequires:  lib64z-ng-static-devel
 BuildRequires:  lib64qrcodegencpp-devel
+BuildRequires:  lib64gio-gir2.0
+BuildRequires:  lib64glib-gir2.0
 
 # pkgconfig
 BuildRequires:  pkgconfig(alsa)
