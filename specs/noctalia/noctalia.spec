@@ -1,6 +1,6 @@
 Name:           noctalia
 Version:        5.4.1
-Release:        1
+Release:        2
 Summary:        A sleek, customizable desktop shell crafted for Wayland.
 License:        MIT
 URL:            https://github.com/noctalia-dev/noctalia
