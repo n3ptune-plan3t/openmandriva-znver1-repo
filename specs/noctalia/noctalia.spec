@@ -5,6 +5,7 @@ Summary:        A sleek, customizable desktop shell crafted for Wayland.
 License:        MIT
 URL:            https://github.com/noctalia-dev/noctalia
 Source0:        https://github.com/noctalia-dev/noctalia/archive/v%{version}/%{name}-%{version}.tar.gz
+Source1:        stb_image_resize2.h
 
 BuildRequires:	meson
 BuildRequires:	dbus-daemon
@@ -120,7 +121,15 @@ mv third_party/material_color_utilities/LICENSE LICENSE.material_color_utilities
 mv third_party/wuffs/LICENSE-APACHE             LICENSE-Apache-2.0.wuffs
 mv third_party/wuffs/LICENSE-MIT                LICENSE-MIT.wuffs
 
+# TEMP: OpenMandriva's stb package lacks stb_image_resize2.h; remove once fixed
+mkdir -p vendor/stb
+cp %{SOURCE1} vendor/stb/
+
 %build
+
+# TEMP: make stb/stb_image_resize2.h findable (see %%prep)
+export CPATH="$PWD/vendor${CPATH:+:$CPATH}"
+
 %meson	\
 	-Dtests=enabled \
 	-Dnative_optimizations=false \
