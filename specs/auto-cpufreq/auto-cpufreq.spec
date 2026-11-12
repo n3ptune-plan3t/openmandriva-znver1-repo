@@ -1,18 +1,20 @@
+%global commit fe7b13baeca002b368b1261bcc681ca9995055cf
+
 Name:           auto-cpufreq
 Version:        3.2.0
-Release:        1
+Release:        2
 Summary:        Automatic CPU speed and power optimizer
 License:        GPL-3.0-or-later
 Group:          System/Configuration
 URL:            https://github.com/AdnanHodzic/auto-cpufreq
-Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+Source0:        %{url}/archive/%{commit}/%{name}-%{commit}.tar.gz
 BuildArch:      noarch
 BuildSystem:    python
 
 BuildRequires:  pkgconfig(python)
-BuildRequires:  python%{pyver}dist(pip)
-BuildRequires:  python%{pyver}dist(wheel)
-BuildRequires:  python%{pyver}dist(poetry-core)
+BuildRequires:  python3dist(pip)
+BuildRequires:  python3dist(wheel)
+BuildRequires:  python3dist(poetry-core)
 
 Requires:       systemd
 Recommends:     dmidecode
@@ -27,19 +29,20 @@ Runs as a systemd daemon. Config: /etc/auto-cpufreq.conf
 Summary:        GTK GUI for auto-cpufreq
 Group:          System/Configuration
 Requires:       %{name} = %{EVRD}
-Requires:       typelib(Gtk) = 3.0
-Requires:       python%{pyver}dist(pygobject)
+Requires:       python3dist(pygobject)
+Requires:       %{_lib}gtk-gir3.0
+Requires:       %{_lib}gdk-gir3.0
+Requires:       %{_lib}gdk_pixbuf-gir2.0
 Requires:       polkit
 
 %description gtk
 GTK graphical interface for auto-cpufreq.
 
-%prep -a
+%prep
+%autosetup -n %{name}-%{commit} -p1
 # poetry-dynamic-versioning needs git metadata: use the static version
 sed -i -e 's|^build-backend = .*|build-backend = "poetry.core.masonry.api"|' \
        -e 's|, *"poetry-dynamic-versioning[^"]*"||' pyproject.toml
-# upstream pins inotify-simple exactly
-sed -i 's|^inotify-simple = "2.0.1"|inotify-simple = ">=2.0.1"|' pyproject.toml
 
 # state files: /opt/auto-cpufreq -> /var/lib/auto-cpufreq
 sed -i -e 's|/opt/auto-cpufreq/override.pickle|%{_sharedstatedir}/auto-cpufreq/override.pickle|' \
