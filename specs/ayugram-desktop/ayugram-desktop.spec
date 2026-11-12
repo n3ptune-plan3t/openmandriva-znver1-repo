@@ -8,7 +8,7 @@
 
 Name:           ayugram-desktop
 Version:        7.2.9
-Release:        1
+Release:        2
 Summary:        Telegram Desktop fork with Ghost mode and message history
 License:        GPL-3.0-or-later WITH openvpn-openssl-exception
 Group:          Networking/Instant messaging
