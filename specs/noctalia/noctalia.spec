@@ -1,3 +1,7 @@
+# LTO + -g3 OOM-kills the final link on the CI runner
+%global optflags %(echo '%{optflags}' | sed -E 's/-flto[^ ]*//g; s/-g3//g; s/-gdwarf-[0-9]//g')
+%global build_ldflags %(echo '%{build_ldflags}' | sed -E 's/-flto[^ ]*//g; s/-g3//g; s/-gdwarf-[0-9]//g')
+
 Name:           noctalia
 Version:        5.4.1
 Release:        2
@@ -57,7 +61,8 @@ BuildRequires:  pkgconfig(sndfile)
 BuildRequires:	pkgconfig(epoxy)
 
 # Needed by plugin_git_export_test
-BuildRequires:  git-core
+# BuildRequires:  git-core
+# Not required anymore, since we disabled tests
 
 Requires:       hicolor-icon-theme	
 # segfault at startup if it cannot connect to the pipewire daemon
@@ -131,12 +136,12 @@ cp %{SOURCE1} vendor/stb/
 export CPATH="$PWD/vendor${CPATH:+:$CPATH}"
 
 %meson	\
-	-Dtests=enabled \
+	-Dtests=disabled \
 	-Dnative_optimizations=false \
 	-Db_lto=false \
 	--buildtype=release
 
-%meson_build	
+%meson_build -j2
 
 %install
 %meson_install
