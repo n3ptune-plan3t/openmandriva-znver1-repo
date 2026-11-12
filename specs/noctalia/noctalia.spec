@@ -1,6 +1,8 @@
 # LTO + -g3 OOM-kills the final link on the CI runner
 %global optflags %(echo '%{optflags}' | sed -E 's/-flto[^ ]*//g; s/-g3//g; s/-gdwarf-[0-9]//g')
 %global build_ldflags %(echo '%{build_ldflags}' | sed -E 's/-flto[^ ]*//g; s/-g3//g; s/-gdwarf-[0-9]//g')
+%global _debuginfo_subpackages 0
+%global debug_package %{nil}.
 
 Name:           noctalia
 Version:        5.4.1
