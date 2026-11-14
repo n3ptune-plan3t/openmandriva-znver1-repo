@@ -9,7 +9,7 @@ License:        MIT
 Group:          Networking/WWW
 URL:            https://github.com/tw93/Pake
 Source0:        %{url}/releases/download/V%{version}/Gemini_x86_64.deb#/%{name}-%{version}.x86_64.deb
-ExclusiveArch:  x86_64
+ExclusiveArch:  x86_64 znver1
 BuildRequires:  binutils
 BuildRequires:  tar
 BuildRequires:  desktop-file-utils
